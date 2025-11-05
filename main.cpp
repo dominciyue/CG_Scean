@@ -16,13 +16,16 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <cmath>
+#include <random>
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow* window);
 
-// OBJ模型加载相关结构体和函数
+// OBJ模型加载相关结构体（前置声明）
+// ------------------------------------------------------------------
 struct Vertex {
     glm::vec3 Position;
     glm::vec3 Normal;
@@ -41,6 +44,257 @@ struct Mesh {
     std::vector<Texture> textures;
     unsigned int VAO = 0, VBO = 0, EBO = 0;
 };
+
+// 地形沙盘系统相关结构和函数
+// ------------------------------------------------------------------
+// Perlin Noise 实现（简化版）
+float noise2D(float x, float z, int seed) {
+    // 简单的伪随机噪声函数
+    int n = (int)x + (int)z * 57 + seed * 131;
+    n = (n << 13) ^ n;
+    return (1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f);
+}
+
+float interpolate(float a, float b, float x) {
+    float ft = x * 3.1415927f;
+    float f = (1.0f - cos(ft)) * 0.5f;
+    return a * (1.0f - f) + b * f;
+}
+
+float smoothNoise(float x, float z, int seed) {
+    float corners = (noise2D(x - 1.0f, z - 1.0f, seed) + noise2D(x + 1.0f, z - 1.0f, seed) +
+                     noise2D(x - 1.0f, z + 1.0f, seed) + noise2D(x + 1.0f, z + 1.0f, seed)) / 16.0f;
+    float sides = (noise2D(x - 1.0f, z, seed) + noise2D(x + 1.0f, z, seed) +
+                   noise2D(x, z - 1.0f, seed) + noise2D(x, z + 1.0f, seed)) / 8.0f;
+    float center = noise2D(x, z, seed) / 4.0f;
+    return corners + sides + center;
+}
+
+float interpolatedNoise(float x, float z, int seed) {
+    int intX = (int)x;
+    float fracX = x - (float)intX;
+    int intZ = (int)z;
+    float fracZ = z - (float)intZ;
+
+    float v1 = smoothNoise((float)intX, (float)intZ, seed);
+    float v2 = smoothNoise((float)(intX + 1), (float)intZ, seed);
+    float v3 = smoothNoise((float)intX, (float)(intZ + 1), seed);
+    float v4 = smoothNoise((float)(intX + 1), (float)(intZ + 1), seed);
+
+    float i1 = interpolate(v1, v2, fracX);
+    float i2 = interpolate(v3, v4, fracX);
+    return interpolate(i1, i2, fracZ);
+}
+
+float perlinNoise(float x, float z, int octaves, float persistence, int seed) {
+    float total = 0.0f;
+    float frequency = 1.0f;
+    float amplitude = 1.0f;
+    float maxValue = 0.0f;
+
+    for (int i = 0; i < octaves; i++) {
+        total += interpolatedNoise(x * frequency, z * frequency, seed) * amplitude;
+        maxValue += amplitude;
+        amplitude *= persistence;
+        frequency *= 2.0f;
+    }
+
+    return total / maxValue;
+}
+
+// 生成地形网格 - 支持独立的X和Z缩放，生成实心山体
+void generateTerrain(std::vector<Vertex>& vertices, std::vector<unsigned int>& indices,
+                     int gridWidth, int gridHeight, float scaleX, float scaleZ, float heightScale) {
+    vertices.clear();
+    indices.clear();
+
+    // 生成顶面顶点（带地形起伏）
+    std::vector<float> heights; // 存储每个点的高度，用于生成侧面
+    for (int z = 0; z <= gridHeight; z++) {
+        for (int x = 0; x <= gridWidth; x++) {
+            Vertex vertex;
+            
+            // 位置（X-Z平面）- 使用独立的X和Z缩放
+            float xPos = (x / (float)gridWidth - 0.5f) * scaleX;
+            float zPos = (z / (float)gridHeight - 0.5f) * scaleZ;
+            
+            // 使用Perlin Noise生成高度（确保为正值）
+            float height = perlinNoise(x * 0.2f, z * 0.2f, 4, 0.5f, 42) * heightScale;
+            height = fabs(height); // 确保高度为正
+            heights.push_back(height);
+            
+            vertex.Position = glm::vec3(xPos, height, zPos);
+            vertex.Normal = glm::vec3(0.0f, 1.0f, 0.0f); // 临时法向量
+            vertex.TexCoords = glm::vec2(x / (float)gridWidth, z / (float)gridHeight);
+            
+            vertices.push_back(vertex);
+        }
+    }
+    
+    int topVertexCount = (gridWidth + 1) * (gridHeight + 1);
+    
+    // 生成底面顶点（Y=0，完全平坦）
+    for (int z = 0; z <= gridHeight; z++) {
+        for (int x = 0; x <= gridWidth; x++) {
+            Vertex vertex;
+            float xPos = (x / (float)gridWidth - 0.5f) * scaleX;
+            float zPos = (z / (float)gridHeight - 0.5f) * scaleZ;
+            
+            vertex.Position = glm::vec3(xPos, 0.0f, zPos); // 底面在Y=0
+            vertex.Normal = glm::vec3(0.0f, -1.0f, 0.0f);
+            vertex.TexCoords = glm::vec2(x / (float)gridWidth, z / (float)gridHeight);
+            
+            vertices.push_back(vertex);
+        }
+    }
+
+    // 生成顶面索引
+    for (int z = 0; z < gridHeight; z++) {
+        for (int x = 0; x < gridWidth; x++) {
+            int topLeft = z * (gridWidth + 1) + x;
+            int topRight = topLeft + 1;
+            int bottomLeft = (z + 1) * (gridWidth + 1) + x;
+            int bottomRight = bottomLeft + 1;
+
+            indices.push_back(topLeft);
+            indices.push_back(bottomLeft);
+            indices.push_back(topRight);
+
+            indices.push_back(topRight);
+            indices.push_back(bottomLeft);
+            indices.push_back(bottomRight);
+        }
+    }
+    
+    // 生成底面索引（反向，因为从下往上看）
+    for (int z = 0; z < gridHeight; z++) {
+        for (int x = 0; x < gridWidth; x++) {
+            int topLeft = topVertexCount + z * (gridWidth + 1) + x;
+            int topRight = topLeft + 1;
+            int bottomLeft = topVertexCount + (z + 1) * (gridWidth + 1) + x;
+            int bottomRight = bottomLeft + 1;
+
+            indices.push_back(topLeft);
+            indices.push_back(topRight);
+            indices.push_back(bottomLeft);
+
+            indices.push_back(topRight);
+            indices.push_back(bottomRight);
+            indices.push_back(bottomLeft);
+        }
+    }
+    
+    // 生成四个侧面，连接顶面和底面
+    // 前侧面 (z=0)
+    for (int x = 0; x < gridWidth; x++) {
+        int topLeft = x;
+        int topRight = x + 1;
+        int bottomLeft = topVertexCount + x;
+        int bottomRight = topVertexCount + x + 1;
+        
+        indices.push_back(topLeft);
+        indices.push_back(bottomLeft);
+        indices.push_back(topRight);
+        indices.push_back(topRight);
+        indices.push_back(bottomLeft);
+        indices.push_back(bottomRight);
+    }
+    
+    // 后侧面 (z=gridHeight)
+    for (int x = 0; x < gridWidth; x++) {
+        int topLeft = gridHeight * (gridWidth + 1) + x;
+        int topRight = topLeft + 1;
+        int bottomLeft = topVertexCount + gridHeight * (gridWidth + 1) + x;
+        int bottomRight = bottomLeft + 1;
+        
+        indices.push_back(topLeft);
+        indices.push_back(topRight);
+        indices.push_back(bottomLeft);
+        indices.push_back(topRight);
+        indices.push_back(bottomRight);
+        indices.push_back(bottomLeft);
+    }
+    
+    // 左侧面 (x=0)
+    for (int z = 0; z < gridHeight; z++) {
+        int topLeft = z * (gridWidth + 1);
+        int topRight = (z + 1) * (gridWidth + 1);
+        int bottomLeft = topVertexCount + z * (gridWidth + 1);
+        int bottomRight = topVertexCount + (z + 1) * (gridWidth + 1);
+        
+        indices.push_back(topLeft);
+        indices.push_back(topRight);
+        indices.push_back(bottomLeft);
+        indices.push_back(topRight);
+        indices.push_back(bottomRight);
+        indices.push_back(bottomLeft);
+    }
+    
+    // 右侧面 (x=gridWidth)
+    for (int z = 0; z < gridHeight; z++) {
+        int topLeft = z * (gridWidth + 1) + gridWidth;
+        int topRight = (z + 1) * (gridWidth + 1) + gridWidth;
+        int bottomLeft = topVertexCount + z * (gridWidth + 1) + gridWidth;
+        int bottomRight = topVertexCount + (z + 1) * (gridWidth + 1) + gridWidth;
+        
+        indices.push_back(topLeft);
+        indices.push_back(bottomLeft);
+        indices.push_back(topRight);
+        indices.push_back(topRight);
+        indices.push_back(bottomLeft);
+        indices.push_back(bottomRight);
+    }
+
+    // 计算法向量（仅针对顶面）
+    for (size_t i = 0; i < (gridWidth * gridHeight * 6); i += 3) {
+        unsigned int i0 = indices[i];
+        unsigned int i1 = indices[i + 1];
+        unsigned int i2 = indices[i + 2];
+
+        glm::vec3 v0 = vertices[i0].Position;
+        glm::vec3 v1 = vertices[i1].Position;
+        glm::vec3 v2 = vertices[i2].Position;
+
+        glm::vec3 edge1 = v1 - v0;
+        glm::vec3 edge2 = v2 - v0;
+        glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
+
+        vertices[i0].Normal += normal;
+        vertices[i1].Normal += normal;
+        vertices[i2].Normal += normal;
+    }
+
+    // 归一化顶面法向量
+    for (size_t i = 0; i < topVertexCount; i++) {
+        vertices[i].Normal = glm::normalize(vertices[i].Normal);
+    }
+}
+
+// 粒子系统
+struct Particle {
+    glm::vec3 position;
+    glm::vec3 velocity;
+    float life; // 生命周期
+    bool active;
+};
+
+// 天气系统状态变量
+bool cloudVisible = false;
+bool isRaining = false;
+bool isSnowing = false;
+bool cloudControlMode = false;
+glm::vec3 cloudPosition(0.0f, 0.8f, 0.5f); // 雨云位置（降低高度，不在天花板上）
+std::vector<Particle> rainParticles;
+std::vector<Particle> snowParticles;
+
+// 积雪高度图（每个地形顶点的积雪厚度）
+const int TERRAIN_GRID_SIZE = 128;
+std::vector<float> snowHeightMap((TERRAIN_GRID_SIZE + 1) * (TERRAIN_GRID_SIZE + 1), 0.0f);
+
+// 按键状态（防止重复触发）
+bool keyMPressed = false;
+bool keyRPressed = false;
+bool keySPressed = false; // S键控制下雪
 
 // 加载纹理
 unsigned int loadTexture(const char* path) {
@@ -78,8 +332,11 @@ unsigned int loadTexture(const char* path) {
 
 // 简单的OBJ加载器
 bool loadOBJ(const std::string& path, std::vector<Vertex>& vertices, std::vector<unsigned int>& indices) {
+    std::cout << "Loading OBJ file: " << path << std::endl;
+    
     std::ifstream file(path);
     if (!file.is_open()) {
+        std::cout << "Failed to open OBJ file: " << path << std::endl;
         return false;
     }
     
@@ -89,7 +346,12 @@ bool loadOBJ(const std::string& path, std::vector<Vertex>& vertices, std::vector
     std::vector<unsigned int> posIndices, normalIndices, texIndices;
     
     std::string line;
+    int lineCount = 0;
     while (std::getline(file, line)) {
+        lineCount++;
+        if (lineCount % 10000 == 0) {
+            std::cout << "Processed " << lineCount << " lines..." << std::endl;
+        }
         
         std::istringstream iss(line);
         std::string prefix;
@@ -122,13 +384,20 @@ bool loadOBJ(const std::string& path, std::vector<Vertex>& vertices, std::vector
                     if (!texStr.empty()) texIndices.push_back(std::stoi(texStr) - 1);
                     if (!normalStr.empty()) normalIndices.push_back(std::stoi(normalStr) - 1);
                 } catch (const std::exception& e) {
+                    std::cout << "Error parsing face data at line " << lineCount << std::endl;
                     continue;
                 }
             }
         }
     }
     
+    std::cout << "Finished reading file. Positions: " << positions.size() 
+              << ", Normals: " << normals.size() 
+              << ", TexCoords: " << texCoords.size() 
+              << ", Faces: " << posIndices.size() / 3 << std::endl;
+    
     // 构建顶点数据
+    std::cout << "Building vertex data..." << std::endl;
     for (size_t i = 0; i < posIndices.size(); i++) {
         Vertex vertex;
         
@@ -154,17 +423,28 @@ bool loadOBJ(const std::string& path, std::vector<Vertex>& vertices, std::vector
         indices.push_back(static_cast<unsigned int>(i));
     }
     
+    std::cout << "OBJ loading completed. Vertices: " << vertices.size() << std::endl;
+    
     // 验证数据完整性
-    if (vertices.empty() || indices.empty()) {
+    if (vertices.empty()) {
+        std::cout << "Error: No vertices loaded!" << std::endl;
+        return false;
+    }
+    
+    if (indices.empty()) {
+        std::cout << "Error: No indices loaded!" << std::endl;
         return false;
     }
     
     // 检查索引是否超出顶点范围
     for (size_t i = 0; i < indices.size(); i++) {
         if (indices[i] >= vertices.size()) {
+            std::cout << "Error: Index " << indices[i] << " out of range (max: " << vertices.size() - 1 << ")" << std::endl;
             return false;
         }
     }
+    
+    std::cout << "Data validation passed!" << std::endl;
     return true;
 }
 
@@ -271,7 +551,9 @@ int main()
     Mesh tableMesh;
     bool objLoaded = false;
     
+    std::cout << "Attempting to load OBJ model..." << std::endl;
     if (loadOBJ("obj/table3.obj", tableMesh.vertices, tableMesh.indices)) {
+        std::cout << "Successfully loaded table model with " << tableMesh.vertices.size() << " vertices" << std::endl;
         setupMesh(tableMesh);
         objLoaded = true;
         
@@ -280,17 +562,23 @@ int main()
         woodTexture.id = loadTexture("obj/wood.jpg");
         woodTexture.type = "texture_diffuse";
         woodTexture.path = "obj/wood.jpg";
+        std::cout << "Wood texture ID: " << woodTexture.id << std::endl;
         tableMesh.textures.push_back(woodTexture);
         
         Texture pillowTexture;
         pillowTexture.id = loadTexture("obj/pillow.jpg");
         pillowTexture.type = "texture_diffuse";
         pillowTexture.path = "obj/pillow.jpg";
+        std::cout << "Pillow texture ID: " << pillowTexture.id << std::endl;
         tableMesh.textures.push_back(pillowTexture);
+    } else {
+        std::cout << "Failed to load table model, using simple geometry instead" << std::endl;
+        objLoaded = false;
     }
     
     // 加载窗户纹理
     unsigned int windowTexture = loadTexture("window.png");
+    std::cout << "Window texture ID: " << windowTexture << std::endl;
 
     // ͳһ�����õ���������Ϣ(ÿһ��ǰ��������Ϊ������꣬������Ϊ������)
     // ------------------------------------------------------------------
@@ -649,6 +937,116 @@ int main()
         glEnableVertexAttribArray(2);
     }
 
+    // 创建地形沙盘系统
+// ------------------------------------------------------------------
+    // 地台几何数据（位于桌面上的基座）- 缩小到3/4
+    float platformVertices[] = {
+        // 顶面
+        -0.15f, 0.03f, -0.1125f,  0.0f, 1.0f, 0.0f,
+         0.15f, 0.03f, -0.1125f,  0.0f, 1.0f, 0.0f,
+         0.15f, 0.03f,  0.1125f,  0.0f, 1.0f, 0.0f,
+         0.15f, 0.03f,  0.1125f,  0.0f, 1.0f, 0.0f,
+        -0.15f, 0.03f,  0.1125f,  0.0f, 1.0f, 0.0f,
+        -0.15f, 0.03f, -0.1125f,  0.0f, 1.0f, 0.0f,
+
+        // 底面
+        -0.15f, 0.0f, -0.1125f,  0.0f, -1.0f, 0.0f,
+         0.15f, 0.0f, -0.1125f,  0.0f, -1.0f, 0.0f,
+         0.15f, 0.0f,  0.1125f,  0.0f, -1.0f, 0.0f,
+         0.15f, 0.0f,  0.1125f,  0.0f, -1.0f, 0.0f,
+        -0.15f, 0.0f,  0.1125f,  0.0f, -1.0f, 0.0f,
+        -0.15f, 0.0f, -0.1125f,  0.0f, -1.0f, 0.0f,
+
+        // 前面
+        -0.15f, 0.0f,  0.1125f,  0.0f, 0.0f, 1.0f,
+         0.15f, 0.0f,  0.1125f,  0.0f, 0.0f, 1.0f,
+         0.15f, 0.03f, 0.1125f,  0.0f, 0.0f, 1.0f,
+         0.15f, 0.03f, 0.1125f,  0.0f, 0.0f, 1.0f,
+        -0.15f, 0.03f, 0.1125f,  0.0f, 0.0f, 1.0f,
+        -0.15f, 0.0f,  0.1125f,  0.0f, 0.0f, 1.0f,
+
+        // 后面
+        -0.15f, 0.0f, -0.1125f,  0.0f, 0.0f, -1.0f,
+         0.15f, 0.0f, -0.1125f,  0.0f, 0.0f, -1.0f,
+         0.15f, 0.03f,-0.1125f,  0.0f, 0.0f, -1.0f,
+         0.15f, 0.03f,-0.1125f,  0.0f, 0.0f, -1.0f,
+        -0.15f, 0.03f,-0.1125f,  0.0f, 0.0f, -1.0f,
+        -0.15f, 0.0f, -0.1125f,  0.0f, 0.0f, -1.0f,
+
+        // 左面
+        -0.15f, 0.0f, -0.1125f,  -1.0f, 0.0f, 0.0f,
+        -0.15f, 0.0f,  0.1125f,  -1.0f, 0.0f, 0.0f,
+        -0.15f, 0.03f, 0.1125f,  -1.0f, 0.0f, 0.0f,
+        -0.15f, 0.03f, 0.1125f,  -1.0f, 0.0f, 0.0f,
+        -0.15f, 0.03f,-0.1125f,  -1.0f, 0.0f, 0.0f,
+        -0.15f, 0.0f, -0.1125f,  -1.0f, 0.0f, 0.0f,
+
+        // 右面
+         0.15f, 0.0f, -0.1125f,  1.0f, 0.0f, 0.0f,
+         0.15f, 0.0f,  0.1125f,  1.0f, 0.0f, 0.0f,
+         0.15f, 0.03f, 0.1125f,  1.0f, 0.0f, 0.0f,
+         0.15f, 0.03f, 0.1125f,  1.0f, 0.0f, 0.0f,
+         0.15f, 0.03f,-0.1125f,  1.0f, 0.0f, 0.0f,
+         0.15f, 0.0f, -0.1125f,  1.0f, 0.0f, 0.0f,
+    };
+
+    unsigned int VBO9, PlatformVAO;
+    {
+        glGenVertexArrays(1, &PlatformVAO);
+        glGenBuffers(1, &VBO9);
+
+        glBindBuffer(GL_ARRAY_BUFFER, VBO9);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(platformVertices), platformVertices, GL_STATIC_DRAW);
+
+        glBindVertexArray(PlatformVAO);
+
+        // 位置属性
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(0 * sizeof(float)));
+        glEnableVertexAttribArray(0);
+        // 法向量属性
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+    }
+
+    // 生成地形网格 - 完全匹配地台大小(0.3x0.225)，提高分辨率到128
+    Mesh terrainMesh;
+    generateTerrain(terrainMesh.vertices, terrainMesh.indices, 128, 128, 0.3f, 0.225f, 0.05f);
+    setupMesh(terrainMesh);
+    std::cout << "Terrain mesh created with " << terrainMesh.vertices.size() << " vertices" << std::endl;
+    
+    // 创建积雪网格（初始时复制地形网格，后续动态更新）
+    Mesh snowMesh;
+    snowMesh.vertices = terrainMesh.vertices; // 复制地形顶点
+    snowMesh.indices = terrainMesh.indices;   // 复制地形索引
+    setupMesh(snowMesh);
+    std::cout << "Snow mesh created with " << snowMesh.vertices.size() << " vertices" << std::endl;
+
+    // 初始化雨粒子
+    rainParticles.resize(1000);
+    for (auto& particle : rainParticles) {
+        particle.active = false;
+    }
+
+    // 初始化雪粒子
+    snowParticles.resize(500);
+    for (auto& particle : snowParticles) {
+        particle.active = false;
+    }
+
+    // 创建雨云几何（多个椭球体组成的蓬松云朵）- 匹配地台大小(0.3x0.225)
+    std::vector<glm::vec3> cloudSpheres = {
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.06f, 0.015f, 0.0f),
+        glm::vec3(-0.06f, 0.015f, 0.0f),
+        glm::vec3(0.0f, 0.015f, 0.045f),   // Z方向缩小（0.06*0.75=0.045）
+        glm::vec3(0.0f, 0.015f, -0.045f),
+        glm::vec3(0.03f, -0.008f, 0.0225f),
+        glm::vec3(-0.03f, -0.008f, 0.0225f),
+        glm::vec3(0.03f, -0.008f, -0.0225f),
+        glm::vec3(-0.03f, -0.008f, -0.0225f),
+    };
+
+    std::cout << "Starting render loop..." << std::endl;
 
     // ��Ⱦѭ��
     // -----------
@@ -664,21 +1062,129 @@ int main()
         // -----
         processInput(window);
 
+        // 更新粒子系统
+        // ------
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<float> dist(-0.5f, 0.5f);
+        
+        // 更新雨粒子
+        if (isRaining && cloudVisible) {
+            for (auto& particle : rainParticles) {
+                if (particle.active) {
+                    // 更新位置
+                    particle.position += particle.velocity * deltaTime;
+                    particle.life -= deltaTime;
+
+                    // 简单碰撞检测（与地形高度比较）- 地形从0.6开始
+                    if (particle.position.y <= 0.6f || particle.life <= 0.0f) {
+                        particle.active = false;
+                    }
+                } else {
+                    // 激活新粒子（范围精确匹配地台：X=0.3, Z=0.225）
+                    if (dist(gen) > 0.3f) {
+                        particle.position = cloudPosition + glm::vec3(dist(gen) * 0.15f, -0.05f, dist(gen) * 0.1125f);
+                        particle.velocity = glm::vec3(0.0f, -5.0f, 0.0f);
+                        particle.life = 3.0f;
+                        particle.active = true;
+                    }
+                }
+            }
+        }
+
+        // 更新雪粒子（需要云层可见）
+        if (isSnowing && cloudVisible) {
+            for (auto& particle : snowParticles) {
+                if (particle.active) {
+                    // 更新位置（雪花飘落，带有水平飘动）
+                    particle.position += particle.velocity * deltaTime;
+                    particle.position.x += sin(particle.life * 2.0f) * 0.1f * deltaTime;
+                    particle.life += deltaTime;
+
+                    // 碰撞检测 - 地形从0.6开始
+                    // 将世界坐标转换为地形网格坐标
+                    float terrainCenterX = 0.0f;
+                    float terrainCenterZ = 0.6f;
+                    float terrainScaleX = 0.3f;
+                    float terrainScaleZ = 0.225f;
+                    
+                    // 粒子相对于地形中心的位置
+                    float relativeX = particle.position.x - terrainCenterX;
+                    float relativeZ = particle.position.z - terrainCenterZ;
+                    
+                    // 转换为网格坐标 [0, TERRAIN_GRID_SIZE]
+                    float gridX = (relativeX / terrainScaleX + 0.5f) * TERRAIN_GRID_SIZE;
+                    float gridZ = (relativeZ / terrainScaleZ + 0.5f) * TERRAIN_GRID_SIZE;
+                    
+                    // 检查是否在地形范围内
+                    if (gridX >= 0 && gridX <= TERRAIN_GRID_SIZE && 
+                        gridZ >= 0 && gridZ <= TERRAIN_GRID_SIZE) {
+                        
+                        int ix = (int)gridX;
+                        int iz = (int)gridZ;
+                        
+                        if (ix >= 0 && ix < TERRAIN_GRID_SIZE && iz >= 0 && iz < TERRAIN_GRID_SIZE) {
+                            int vertexIndex = iz * (TERRAIN_GRID_SIZE + 1) + ix;
+                            float currentSnowHeight = snowHeightMap[vertexIndex];
+                            
+                            // 简单碰撞检测
+                            if (particle.position.y <= 0.6f + currentSnowHeight) {
+                                particle.active = false;
+                                // 在该顶点堆积雪（速度加倍）
+                                snowHeightMap[vertexIndex] += 0.0002f;  // 从0.0001f增加到0.0002f
+                                if (snowHeightMap[vertexIndex] > 0.05f) {
+                                    snowHeightMap[vertexIndex] = 0.05f;
+                                }
+                            }
+                        }
+                    } else {
+                        // 超出地形范围，直接消失
+                        if (particle.position.y <= 0.6f) {
+                            particle.active = false;
+                        }
+                    }
+                } else {
+                    // 激活新粒子（从云层位置生成，和下雨一样）
+                    if (dist(gen) > 0.4f) {
+                        particle.position = cloudPosition + glm::vec3(dist(gen) * 0.15f, -0.05f, dist(gen) * 0.1125f);
+                        particle.velocity = glm::vec3(0.0f, -1.5f, 0.0f); // 雪比雨慢一点
+                        particle.life = 0.0f;
+                        particle.active = true;
+                    }
+                }
+            }
+        }
+
         // ��ʼ��Ⱦ
         // ------
+        static int frameCount = 0;
+        frameCount++;
+        if (frameCount == 1) {
+            std::cout << "First frame rendering..." << std::endl;
+        }
         
         glClearColor(0.3f, 0.3f, 0.3f, 1.0f);  // 增加背景亮度
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // ȷ�������� Uniforms/Drawing ����ʱ���� Shader
         //---------------------------------------------------------------------
+        if (frameCount == 1) {
+            std::cout << "Using lighting shader..." << std::endl;
+        }
         lightingShader.use();
+        
+        if (frameCount == 1) {
+            std::cout << "Setting up matrices..." << std::endl;
+        }
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = camera.GetViewMatrix();
         glm::mat4 model = glm::mat4(1.0f);
 
         //�����컨��
         {
+            if (frameCount == 1) {
+                std::cout << "Rendering ceiling..." << std::endl;
+            }
             //lightingShader.setVec3("objectColor", 0.5, 0.5f, 0.5f);
             lightingShader.setVec3("objectColor", 0.8f, 0.7f, 0.6f);  // 米黄色
             lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);  // 增加光源强度
@@ -702,6 +1208,9 @@ int main()
 
         // ���Ƶذ�
         {
+            if (frameCount == 1) {
+                std::cout << "Rendering floor..." << std::endl;
+            }
             //lightingShader.setVec3("objectColor", 0.5f, 0.5f, 0.5f);
             lightingShader.setVec3("objectColor", 0.8f, 0.7f, 0.6f);  // 米黄色
             lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);  // 增加光源强度
@@ -726,6 +1235,9 @@ int main()
 
         // ������ǽ
         {
+            if (frameCount == 1) {
+                std::cout << "Rendering left wall..." << std::endl;
+            }
             //lightingShader.setVec3("objectColor", 1.0f, 0.0f, 0.31f);
             lightingShader.setVec3("objectColor", 0.6f, 0.3f, 0.2f);  // 深棕色
             lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);  // 增加光源强度
@@ -750,6 +1262,9 @@ int main()
 
         // ������ǽ
         {
+            if (frameCount == 1) {
+                std::cout << "Rendering right wall..." << std::endl;
+            }
             //lightingShader.setVec3("objectColor", 1.0f, 0.5f, 0.31f);
             lightingShader.setVec3("objectColor", 0.7f, 0.4f, 0.3f);  // 浅棕色
             lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);  // 增加光源强度
@@ -774,6 +1289,9 @@ int main()
 
         // ����ǰǽ
         {
+            if (frameCount == 1) {
+                std::cout << "Rendering front wall..." << std::endl;
+            }
             //lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);
             lightingShader.setVec3("objectColor", 0.9f, 0.85f, 0.8f);  // 浅米色
             lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);  // 增加光源强度
@@ -797,6 +1315,9 @@ int main()
         }
         // 绘制窗户 - 带纹理的简单矩形（先绘制背景物体）
         {
+            if (frameCount == 1) {
+                std::cout << "Rendering window..." << std::endl;
+            }
             // 设置光照参数
             lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);  // 白色，让纹理显示
             lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);  // 增加光源强度
@@ -811,7 +1332,7 @@ int main()
             // 模型变换 - 将窗户放在前墙上
             model = glm::mat4(1.0f);
             model = glm::translate(model, cubePos);  // 先移动到场景中心
-            model = glm::translate(model, glm::vec3(0.0f, 0.0f, -0.49f));  // 放在前墙面上
+            model = glm::translate(model, glm::vec3(0.0f, 0.0f, -0.499f));  // 放在前墙面上
             model = glm::scale(model, glm::vec3(0.6f));  // 调整窗户大小
             lightingShader.setMat4("model", model);
 
@@ -834,6 +1355,9 @@ int main()
 
         // 绘制桌子模型（后绘制前景物体）
         {
+            if (frameCount == 1) {
+                std::cout << "Rendering table..." << std::endl;
+            }
             // 设置光照参数
             lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);  // 白色，让纹理显示
             lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);  // 增加光源强度
@@ -847,7 +1371,7 @@ int main()
 
             // 模型变换 - 将桌子放在窗户前面，屋子中间
             model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(0.0f, 0.3f, 0.4f));  // 进一步前移，确保椅子部分遮挡窗户
+            model = glm::translate(model, glm::vec3(0.0f, 0.33f, 0.5f));  // 进一步前移，确保椅子部分遮挡窗户
             model = glm::rotate(model, glm::radians(270.0f), glm::vec3(0.0f, 1.0f, 0.0f));  // 绕Y轴旋转180度，让桌椅正对相机
             model = glm::scale(model, glm::vec3(0.08f));  // 稍微增大桌子尺寸
             lightingShader.setMat4("model", model);
@@ -872,7 +1396,18 @@ int main()
                 glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
                 glBindVertexArray(tableMesh.VAO);
                 
+                // 添加错误检查
+                GLenum error = glGetError();
+                if (error != GL_NO_ERROR) {
+                    std::cout << "OpenGL error before drawing: " << error << std::endl;
+                }
+                
                 glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(tableMesh.indices.size()), GL_UNSIGNED_INT, 0);
+                
+                error = glGetError();
+                if (error != GL_NO_ERROR) {
+                    std::cout << "OpenGL error after drawing: " << error << std::endl;
+                }
                 
                 glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  // 保持填充模式
             } else {
@@ -887,8 +1422,159 @@ int main()
                 glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  // 保持填充模式
             }
         }
+        // 绘制地形沙盘系统
+        {
+            lightingShader.use();
+            
+            // 绘制地台
+            lightingShader.setVec3("objectColor", 0.5f, 0.4f, 0.3f);  // 棕灰色
+            lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);
+            lightingShader.setVec3("lightPos", lightPos);
+            lightingShader.setVec3("viewPos", camera.Position);
+            lightingShader.setBool("hasTexture", false);
+            lightingShader.setFloat("alpha", 1.0f);
+
+            lightingShader.setMat4("projection", projection);
+            lightingShader.setMat4("view", view);
+
+            // 地台位置（在桌面上，略高于桌面）
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(0.0f, 0.57f, 0.6f));
+            lightingShader.setMat4("model", model);
+
+            glBindVertexArray(PlatformVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // 绘制地形 - 位置匹配地台顶面，实心山体
+            lightingShader.setVec3("objectColor", 0.4f, 0.6f, 0.3f);  // 草绿色
+            
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(0.0f, 0.6f, 0.6f)); // 0.57(地台)+0.03(高度)=0.6，地形位置固定
+            lightingShader.setMat4("model", model);
+
+            glBindVertexArray(terrainMesh.VAO);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(terrainMesh.indices.size()), GL_UNSIGNED_INT, 0);
+            
+            // 绘制积雪层（检查是否有任何积雪）
+            bool hasSnow = false;
+            for (float height : snowHeightMap) {
+                if (height > 0.001f) {
+                    hasSnow = true;
+                    break;
+                }
+            }
+            
+            if (hasSnow) {
+                // 更新积雪网格的顶点高度（只更新顶面顶点，不更新底面和侧面）
+                int topVertexCount = (TERRAIN_GRID_SIZE + 1) * (TERRAIN_GRID_SIZE + 1);
+                for (int i = 0; i < topVertexCount; i++) {
+                    // 将积雪网格的Y坐标设置为地形Y坐标 + 该顶点的积雪厚度
+                    snowMesh.vertices[i].Position.y = terrainMesh.vertices[i].Position.y + snowHeightMap[i];
+                }
+                
+                // 重新上传积雪网格数据到GPU
+                glBindBuffer(GL_ARRAY_BUFFER, snowMesh.VBO);
+                glBufferSubData(GL_ARRAY_BUFFER, 0, snowMesh.vertices.size() * sizeof(Vertex), &snowMesh.vertices[0]);
+                
+                // 启用混合以实现半透明积雪效果
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                
+                lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);  // 纯白色积雪
+                lightingShader.setFloat("alpha", 0.95f);  // 几乎不透明
+                
+                // 积雪层位置：与地形相同
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(0.0f, 0.6f, 0.6f));
+                lightingShader.setMat4("model", model);
+                
+                glBindVertexArray(snowMesh.VAO);
+                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(snowMesh.indices.size()), GL_UNSIGNED_INT, 0);
+                
+                glDisable(GL_BLEND);
+                lightingShader.setFloat("alpha", 1.0f);  // 恢复不透明
+            }
+        }
+
+        // 绘制雨云（如果可见）- 使用半透明效果
+        if (cloudVisible) {
+            // 启用混合模式以显示半透明效果
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            
+            lightingShader.use();
+            lightingShader.setMat4("projection", projection);
+            lightingShader.setMat4("view", view);
+            lightingShader.setVec3("objectColor", 0.9f, 0.9f, 0.95f); // 浅灰白色
+            lightingShader.setVec3("lightColor", 1.2f, 1.2f, 1.2f);
+            lightingShader.setVec3("lightPos", lightPos);
+            lightingShader.setVec3("viewPos", camera.Position);
+            lightingShader.setBool("hasTexture", false);
+            lightingShader.setFloat("alpha", 0.5f); // 半透明
+
+            // 绘制多个椭球体组成蓬松的云朵 - 匹配地台矩形(0.3x0.225)
+            for (size_t i = 0; i < cloudSpheres.size(); i++) {
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, cloudPosition + cloudSpheres[i]);
+                // 不同大小的椭球体创造云朵的蓬松感，Z方向缩小75%
+                float scale = (i == 0) ? 0.09f : 0.06f;
+                model = glm::scale(model, glm::vec3(scale, scale * 0.6f, scale * 0.75f)); // 扁平椭球，Z方向更短
+                lightingShader.setMat4("model", model);
+
+                glBindVertexArray(lightCubeVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+            }
+            
+            glDisable(GL_BLEND);
+        }
+
+        // 绘制雨粒子
+        if (isRaining) {
+            lightCubeShader.use();
+            lightCubeShader.setMat4("projection", projection);
+            lightCubeShader.setMat4("view", view);
+            lightCubeShader.setVec3("lightColor", 0.8f, 0.8f, 1.0f); // 白色雨点
+
+            for (const auto& particle : rainParticles) {
+                if (particle.active) {
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, particle.position);
+                    model = glm::scale(model, glm::vec3(0.01f, 0.02f, 0.01f)); // 细长雨点
+                    lightCubeShader.setMat4("model", model);
+
+                    glBindVertexArray(lightCubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+            }
+        }
+
+        // 绘制雪粒子
+        if (isSnowing && cloudVisible) {
+            lightCubeShader.use();
+            lightCubeShader.setMat4("projection", projection);
+            lightCubeShader.setMat4("view", view);
+            lightCubeShader.setVec3("lightColor", 1.0f, 1.0f, 1.0f); // 白色雪花
+
+            for (const auto& particle : snowParticles) {
+                if (particle.active) {
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, particle.position);
+                    // 雪花旋转效果
+                    model = glm::rotate(model, particle.life * 2.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+                    model = glm::scale(model, glm::vec3(0.025f)); // 雪花比雨大一点
+                    lightCubeShader.setMat4("model", model);
+
+                    glBindVertexArray(lightCubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+            }
+        }
+
         // ���ƵƷ���
         {
+            if (frameCount == 1) {
+                std::cout << "Rendering light cube..." << std::endl;
+            }
             lightCubeShader.use();
             lightCubeShader.setMat4("projection", projection);
             lightCubeShader.setMat4("view", view);
@@ -901,6 +1587,9 @@ int main()
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
         
+        if (frameCount == 1) {
+            std::cout << "First frame completed successfully!" << std::endl;
+        }
 
 
         // glfw����������������ѯ IO �¼�������/�ͷż����ƶ����ȣ�
@@ -919,6 +1608,9 @@ int main()
     glDeleteVertexArrays(1, &lightCubeVAO);
     glDeleteVertexArrays(1, &DeskVAO);
     glDeleteVertexArrays(1, &WindowVAO);
+    glDeleteVertexArrays(1, &PlatformVAO);
+    glDeleteVertexArrays(1, &terrainMesh.VAO);
+    glDeleteVertexArrays(1, &snowMesh.VAO);
     glDeleteBuffers(1, &VBO1);
     glDeleteBuffers(1, &VBO2);
     glDeleteBuffers(1, &VBO3);
@@ -927,7 +1619,12 @@ int main()
     glDeleteBuffers(1, &VBO6);
     glDeleteBuffers(1, &VBO7);
     glDeleteBuffers(1, &VBO8);
+    glDeleteBuffers(1, &VBO9);
     glDeleteBuffers(1, &WindowEBO);
+    glDeleteBuffers(1, &terrainMesh.VBO);
+    glDeleteBuffers(1, &terrainMesh.EBO);
+    glDeleteBuffers(1, &snowMesh.VBO);
+    glDeleteBuffers(1, &snowMesh.EBO);
 
     // glfw����ֹ�����������ǰ����� GLFW ��Դ��
     // ------------------------------------------------------------------
@@ -942,14 +1639,98 @@ void processInput(GLFWwindow* window)
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        camera.ProcessKeyboard(RIGHT, deltaTime);
+    // M键切换雨云显示和控制模式
+    if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
+        if (!keyMPressed) {
+            cloudVisible = !cloudVisible;
+            cloudControlMode = !cloudControlMode;
+            keyMPressed = true;
+            std::cout << "Cloud " << (cloudVisible ? "visible" : "hidden") 
+                      << ", control mode " << (cloudControlMode ? "ON" : "OFF") << std::endl;
+        }
+    } else {
+        keyMPressed = false;
+    }
+
+    // R键切换下雨
+    if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+        if (!keyRPressed) {
+            if (cloudVisible) {
+                isRaining = !isRaining;
+                keyRPressed = true;
+                std::cout << "Rain " << (isRaining ? "started" : "stopped") << std::endl;
+            } else {
+                std::cout << "Need cloud to rain! Press M first." << std::endl;
+                keyRPressed = true;
+            }
+        }
+    } else {
+        keyRPressed = false;
+    }
+
+    // S键切换下雪
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+        if (!keySPressed) {
+            if (cloudVisible) {
+                isSnowing = !isSnowing;
+                keySPressed = true;
+                std::cout << "Snow " << (isSnowing ? "started" : "stopped") << std::endl;
+                if (!isSnowing) {
+                    // 停止下雪时，清空积雪高度图
+                    std::fill(snowHeightMap.begin(), snowHeightMap.end(), 0.0f);
+                }
+            } else {
+                std::cout << "Need cloud to snow! Press M first." << std::endl;
+                keySPressed = true;
+            }
+        }
+    } else {
+        keySPressed = false;
+    }
+
+    // WAXD控制（雨云控制模式或相机控制模式）
+    if (cloudControlMode) {
+        // 雨云控制模式
+        float cloudSpeed = 2.5f * deltaTime;
+        
+        // 沙盘边界（地台大小：0.3x0.225，中心在(0.0, 0.6)）
+        // X范围：[-0.15, 0.15]，Z范围：[-0.1125, 0.1125]
+        const float sandboxCenterX = 0.0f;
+        const float sandboxCenterZ = 0.6f;
+        const float sandboxHalfWidth = 0.15f;   // X方向半宽
+        const float sandboxHalfDepth = 0.1125f; // Z方向半深
+        
+        glm::vec3 newCloudPos = cloudPosition;
+        
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            newCloudPos.z += cloudSpeed;  // 向前
+        if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
+            newCloudPos.z -= cloudSpeed;  // 向后（X键）
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            newCloudPos.x -= cloudSpeed;  // 向左
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            newCloudPos.x += cloudSpeed;  // 向右
+        
+        // 限制云层在沙盘范围内
+        newCloudPos.x = glm::clamp(newCloudPos.x, 
+                                    sandboxCenterX - sandboxHalfWidth, 
+                                    sandboxCenterX + sandboxHalfWidth);
+        newCloudPos.z = glm::clamp(newCloudPos.z, 
+                                    sandboxCenterZ - sandboxHalfDepth, 
+                                    sandboxCenterZ + sandboxHalfDepth);
+        
+        cloudPosition = newCloudPos;
+    } else {
+        // 相机控制模式
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
+            camera.ProcessKeyboard(BACKWARD, deltaTime);  // 向后（X键）
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            camera.ProcessKeyboard(RIGHT, deltaTime);
+    }
 }
 
 // glfw��ÿ�����ڴ�С�����仯��ͨ������ϵͳ���û�������С��ʱ���˻ص���������ִ��
