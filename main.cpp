@@ -545,6 +545,7 @@ int main()
     // ------------------------------------
     Shader lightingShader("lighting.vs", "lighting.fs");
     Shader lightCubeShader("lightcube.vs", "lightcube.fs");
+    Shader terrainShader("terrain.vs", "terrain.fs");  // 独立的地形着色器
     
     // 加载OBJ模型和纹理
     // ------------------------------------
@@ -1445,12 +1446,18 @@ int main()
             glBindVertexArray(PlatformVAO);
             glDrawArrays(GL_TRIANGLES, 0, 36);
 
-            // 绘制地形 - 位置匹配地台顶面，实心山体
-            lightingShader.setVec3("objectColor", 0.4f, 0.6f, 0.3f);  // 草绿色
+            // 绘制地形 - 使用独立的地形着色器，实现高度渐变效果
+            terrainShader.use();
+            terrainShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);
+            terrainShader.setVec3("lightPos", lightPos);
+            terrainShader.setVec3("viewPos", camera.Position);
+            terrainShader.setFloat("alpha", 1.0f);
+            terrainShader.setMat4("projection", projection);
+            terrainShader.setMat4("view", view);
             
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(0.0f, 0.6f, 0.6f)); // 0.57(地台)+0.03(高度)=0.6，地形位置固定
-            lightingShader.setMat4("model", model);
+            terrainShader.setMat4("model", model);
 
             glBindVertexArray(terrainMesh.VAO);
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(terrainMesh.indices.size()), GL_UNSIGNED_INT, 0);
@@ -1480,8 +1487,16 @@ int main()
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 
+                // 切换回lighting着色器绘制积雪
+                lightingShader.use();
                 lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);  // 纯白色积雪
+                lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);
+                lightingShader.setVec3("lightPos", lightPos);
+                lightingShader.setVec3("viewPos", camera.Position);
+                lightingShader.setBool("hasTexture", false);
                 lightingShader.setFloat("alpha", 0.95f);  // 几乎不透明
+                lightingShader.setMat4("projection", projection);
+                lightingShader.setMat4("view", view);
                 
                 // 积雪层位置：与地形相同
                 model = glm::mat4(1.0f);
