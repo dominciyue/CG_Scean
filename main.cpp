@@ -24,7 +24,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow* window);
 
-// OBJ模型加载相关结构体（前置声明）
+// 一些 OBJ 模型相关的基础结构，提前放在这里
 // ------------------------------------------------------------------
 struct Vertex {
     glm::vec3 Position;
@@ -45,11 +45,11 @@ struct Mesh {
     unsigned int VAO = 0, VBO = 0, EBO = 0;
 };
 
-// 地形沙盘系统相关结构和函数
+// 地形沙盘相关的工具函数
 // ------------------------------------------------------------------
-// Perlin Noise 实现（简化版）
+// 下面几段是生成噪声的工具函数，用来给地形制造起伏
 float noise2D(float x, float z, int seed) {
-    // 简单的伪随机噪声函数
+    // 非常朴素的伪随机噪声
     int n = (int)x + (int)z * 57 + seed * 131;
     n = (n << 13) ^ n;
     return (1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f);
@@ -102,29 +102,29 @@ float perlinNoise(float x, float z, int octaves, float persistence, int seed) {
     return total / maxValue;
 }
 
-// 生成地形网格 - 支持独立的X和Z缩放，生成实心山体
+// 负责生成地形网格，X/Z 可分别缩放，同时补齐侧面和底面
 void generateTerrain(std::vector<Vertex>& vertices, std::vector<unsigned int>& indices,
                      int gridWidth, int gridHeight, float scaleX, float scaleZ, float heightScale) {
     vertices.clear();
     indices.clear();
 
-    // 生成顶面顶点（带地形起伏）
-    std::vector<float> heights; // 存储每个点的高度，用于生成侧面
+    // 生成顶面顶点，顺便记录高度供侧面使用
+    std::vector<float> heights;
     for (int z = 0; z <= gridHeight; z++) {
         for (int x = 0; x <= gridWidth; x++) {
             Vertex vertex;
             
-            // 位置（X-Z平面）- 使用独立的X和Z缩放
+            // 顶点在 X-Z 平面的坐标，X/Z 各自缩放
             float xPos = (x / (float)gridWidth - 0.5f) * scaleX;
             float zPos = (z / (float)gridHeight - 0.5f) * scaleZ;
             
-            // 使用Perlin Noise生成高度（确保为正值）
+            // 用 Perlin Noise 抬起地形，取绝对值防止穿台
             float height = perlinNoise(x * 0.2f, z * 0.2f, 4, 0.5f, 42) * heightScale;
             height = fabs(height); // 确保高度为正
             heights.push_back(height);
             
             vertex.Position = glm::vec3(xPos, height, zPos);
-            vertex.Normal = glm::vec3(0.0f, 1.0f, 0.0f); // 临时法向量
+            vertex.Normal = glm::vec3(0.0f, 1.0f, 0.0f); // 先放个朝上的法线
             vertex.TexCoords = glm::vec2(x / (float)gridWidth, z / (float)gridHeight);
             
             vertices.push_back(vertex);
@@ -133,14 +133,14 @@ void generateTerrain(std::vector<Vertex>& vertices, std::vector<unsigned int>& i
     
     int topVertexCount = (gridWidth + 1) * (gridHeight + 1);
     
-    // 生成底面顶点（Y=0，完全平坦）
+    // 底面在 Y=0，用来封住模型
     for (int z = 0; z <= gridHeight; z++) {
         for (int x = 0; x <= gridWidth; x++) {
             Vertex vertex;
             float xPos = (x / (float)gridWidth - 0.5f) * scaleX;
             float zPos = (z / (float)gridHeight - 0.5f) * scaleZ;
             
-            vertex.Position = glm::vec3(xPos, 0.0f, zPos); // 底面在Y=0
+            vertex.Position = glm::vec3(xPos, 0.0f, zPos);
             vertex.Normal = glm::vec3(0.0f, -1.0f, 0.0f);
             vertex.TexCoords = glm::vec2(x / (float)gridWidth, z / (float)gridHeight);
             
@@ -184,7 +184,7 @@ void generateTerrain(std::vector<Vertex>& vertices, std::vector<unsigned int>& i
         }
     }
     
-    // 生成四个侧面，连接顶面和底面
+    // 四个侧面把顶、底连接起来
     // 前侧面 (z=0)
     for (int x = 0; x < gridWidth; x++) {
         int topLeft = x;
@@ -274,11 +274,21 @@ void generateTerrain(std::vector<Vertex>& vertices, std::vector<unsigned int>& i
 struct Particle {
     glm::vec3 position;
     glm::vec3 velocity;
-    float life; // 生命周期
+    float life; // 剩余寿命
     bool active;
 };
 
-// 天气系统状态变量
+// 闪电
+struct Lightning {
+    glm::vec3 startPos;  // 起点（云层）
+    glm::vec3 endPos;    // 终点（地面）
+    float life;          // 剩余时间
+    float maxLife;       // 总持续时间
+    bool active;
+    std::vector<glm::vec3> segments; // 折线分段点
+};
+
+// 天气状态相关变量
 bool cloudVisible = false;
 bool isRaining = false;
 bool isSnowing = false;
@@ -286,17 +296,20 @@ bool cloudControlMode = false;
 glm::vec3 cloudPosition(0.0f, 0.8f, 0.5f); // 雨云位置（降低高度，不在天花板上）
 std::vector<Particle> rainParticles;
 std::vector<Particle> snowParticles;
+std::vector<Lightning> lightnings; // 闪电列表
+float lightningTimer = 0.0f;       // 闪电生成计时器
+float lightningInterval = 0.8f;    // 闪电生成间隔（秒）
 
-// 积雪高度图（每个地形顶点的积雪厚度）
+// 记录每个地形顶点上的积雪厚度
 const int TERRAIN_GRID_SIZE = 128;
 std::vector<float> snowHeightMap((TERRAIN_GRID_SIZE + 1) * (TERRAIN_GRID_SIZE + 1), 0.0f);
 
-// 按键状态（防止重复触发）
+// 防止长按键盘导致状态反复切换
 bool keyMPressed = false;
 bool keyRPressed = false;
 bool keySPressed = false; // S键控制下雪
 
-// 加载纹理
+// 简单的纹理加载器
 unsigned int loadTexture(const char* path) {
     unsigned int textureID;
     glGenTextures(1, &textureID);
@@ -330,7 +343,7 @@ unsigned int loadTexture(const char* path) {
     return textureID;
 }
 
-// 简单的OBJ加载器
+// 非常朴素的 OBJ 读取函数，够当前场景使用
 bool loadOBJ(const std::string& path, std::vector<Vertex>& vertices, std::vector<unsigned int>& indices) {
     std::cout << "Loading OBJ file: " << path << std::endl;
     
@@ -887,8 +900,11 @@ int main()
         glBindVertexArray(lightCubeVAO);
 
         glBindBuffer(GL_ARRAY_BUFFER, VBO6);
+        // 位置属性
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
         glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
     }
 
     // 创建书桌的几何信息
@@ -938,9 +954,7 @@ int main()
         glEnableVertexAttribArray(2);
     }
 
-    // 创建地形沙盘系统
-// ------------------------------------------------------------------
-    // 地台几何数据（位于桌面上的基座）- 缩小到3/4
+    // 地台几何数据
     float platformVertices[] = {
         // 顶面
         -0.15f, 0.03f, -0.1125f,  0.0f, 1.0f, 0.0f,
@@ -1011,7 +1025,7 @@ int main()
 
     // 生成地形网格 - 完全匹配地台大小(0.3x0.225)，提高分辨率到128
     Mesh terrainMesh;
-    generateTerrain(terrainMesh.vertices, terrainMesh.indices, 128, 128, 0.3f, 0.225f, 0.05f);
+    generateTerrain(terrainMesh.vertices, terrainMesh.indices, 128, 128, 0.3f, 0.225f, 0.12f);
     setupMesh(terrainMesh);
     std::cout << "Terrain mesh created with " << terrainMesh.vertices.size() << " vertices" << std::endl;
     
@@ -1022,8 +1036,8 @@ int main()
     setupMesh(snowMesh);
     std::cout << "Snow mesh created with " << snowMesh.vertices.size() << " vertices" << std::endl;
 
-    // 初始化雨粒子
-    rainParticles.resize(1000);
+    // 初始化雨粒子（细雨，数量多但体积小）
+    rainParticles.resize(800);
     for (auto& particle : rainParticles) {
         particle.active = false;
     }
@@ -1032,6 +1046,12 @@ int main()
     snowParticles.resize(500);
     for (auto& particle : snowParticles) {
         particle.active = false;
+    }
+
+    // 初始化闪电（大幅增加数量以支持多分支震撼效果）
+    lightnings.resize(20);
+    for (auto& lightning : lightnings) {
+        lightning.active = false;
     }
 
     // 创建雨云几何（多个椭球体组成的蓬松云朵）- 匹配地台大小(0.3x0.225)
@@ -1156,6 +1176,89 @@ int main()
             }
         }
 
+        // 更新闪电（仅在下雨时生成）
+        if (isRaining && cloudVisible) {
+            lightningTimer += deltaTime;
+            
+            // 定时生成新闪电
+            if (lightningTimer >= lightningInterval) {
+                lightningTimer = 0.0f;
+                
+                // 随机选择一个位置生成闪电
+                std::uniform_real_distribution<float> lightningDist(-0.1f, 0.1f);
+                glm::vec3 strikePos = cloudPosition + glm::vec3(lightningDist(gen) * 0.15f, 0.0f, lightningDist(gen) * 0.1125f);
+                
+                // 生成多条闪电（主电+分支）
+                std::cout << "Lightning strike at (" << strikePos.x << ", " << strikePos.z << ")" << std::endl;
+                
+                int lightningCount = 0;
+                int maxLightnings = 5 + (rand() % 3); // 一次生成5-7条闪电
+                
+                for (auto& lightning : lightnings) {
+                    if (!lightning.active && lightningCount < maxLightnings) {
+                        lightning.active = true;
+                        
+                        // 主闪电和分支有不同的起点，分支更散开
+                        if (lightningCount == 0) {
+                            // 主闪电
+                            lightning.startPos = strikePos;
+                        } else {
+                            // 分支闪电，大幅偏移形成扇形散开
+                            float branchOffset = 0.06f * lightningCount;
+                            lightning.startPos = strikePos + glm::vec3(
+                                lightningDist(gen) * branchOffset,
+                                -0.04f * lightningCount,
+                                lightningDist(gen) * branchOffset
+                            );
+                        }
+                        
+                        // 终点也大幅偏移，增加震撼感
+                        lightning.endPos = glm::vec3(
+                            lightning.startPos.x + lightningDist(gen) * 0.08f,
+                            0.6f,
+                            lightning.startPos.z + lightningDist(gen) * 0.08f
+                        );
+                        
+                        lightning.life = 0.25f; // 持续时间
+                        lightning.maxLife = 0.25f;
+                        
+                        // 生成大量折线段，极度曲折
+                        lightning.segments.clear();
+                        lightning.segments.push_back(lightning.startPos);
+                        
+                        int segmentCount = 12 + (rand() % 6); // 12-17个分段
+                        float segmentHeight = (lightning.startPos.y - lightning.endPos.y) / segmentCount;
+                        
+                        glm::vec3 currentPos = lightning.startPos;
+                        for (int i = 1; i < segmentCount; i++) {
+                            currentPos.y -= segmentHeight;
+                            // 大幅增加随机偏移，形成剧烈曲折
+                            currentPos.x += lightningDist(gen) * 0.06f;
+                            currentPos.z += lightningDist(gen) * 0.06f;
+                            lightning.segments.push_back(currentPos);
+                        }
+                        
+                        lightning.segments.push_back(lightning.endPos);
+                        lightningCount++;
+                    }
+                    
+                    if (lightningCount >= maxLightnings) break;
+                }
+            }
+        } else {
+            lightningTimer = 0.0f; // 不下雨时重置计时器
+        }
+        
+        // 更新所有活跃的闪电
+        for (auto& lightning : lightnings) {
+            if (lightning.active) {
+                lightning.life -= deltaTime;
+                if (lightning.life <= 0.0f) {
+                    lightning.active = false;
+                }
+            }
+        }
+
         // ��ʼ��Ⱦ
         // ------
         static int frameCount = 0;
@@ -1166,6 +1269,11 @@ int main()
         
         glClearColor(0.3f, 0.3f, 0.3f, 1.0f);  // 增加背景亮度
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
+        // 确保每帧开始时OpenGL状态正确
+        glDepthMask(GL_TRUE);  // 确保深度写入开启
+        glEnable(GL_BLEND);    // 确保混合开启
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         // ȷ�������� Uniforms/Drawing ����ʱ���� Shader
         //---------------------------------------------------------------------
@@ -1352,6 +1460,9 @@ int main()
             glBindVertexArray(WindowVAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  // 保持填充模式
+            
+            // 恢复默认状态
+            lightingShader.setFloat("alpha", 1.0f);  // 恢复完全不透明
         }
 
         // 绘制桌子模型（后绘制前景物体）
@@ -1483,11 +1594,7 @@ int main()
                 glBindBuffer(GL_ARRAY_BUFFER, snowMesh.VBO);
                 glBufferSubData(GL_ARRAY_BUFFER, 0, snowMesh.vertices.size() * sizeof(Vertex), &snowMesh.vertices[0]);
                 
-                // 启用混合以实现半透明积雪效果
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                
-                // 切换回lighting着色器绘制积雪
+                // 切换回lighting着色器绘制积雪（不需要额外开关混合，保持全局状态）
                 lightingShader.use();
                 lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);  // 纯白色积雪
                 lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);
@@ -1506,16 +1613,14 @@ int main()
                 glBindVertexArray(snowMesh.VAO);
                 glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(snowMesh.indices.size()), GL_UNSIGNED_INT, 0);
                 
-                glDisable(GL_BLEND);
                 lightingShader.setFloat("alpha", 1.0f);  // 恢复不透明
             }
         }
 
         // 绘制雨云（如果可见）- 使用半透明效果
         if (cloudVisible) {
-            // 启用混合模式以显示半透明效果
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            // 禁用深度写入,避免半透明云层遮挡后面的物体（保持全局混合状态）
+            glDepthMask(GL_FALSE);
             
             lightingShader.use();
             lightingShader.setMat4("projection", projection);
@@ -1540,21 +1645,22 @@ int main()
                 glDrawArrays(GL_TRIANGLES, 0, 36);
             }
             
-            glDisable(GL_BLEND);
+            // 恢复深度写入
+            glDepthMask(GL_TRUE);
         }
 
-        // 绘制雨粒子
+        // 绘制雨粒子（细密的小雨点）
         if (isRaining) {
             lightCubeShader.use();
             lightCubeShader.setMat4("projection", projection);
             lightCubeShader.setMat4("view", view);
-            lightCubeShader.setVec3("lightColor", 0.8f, 0.8f, 1.0f); // 白色雨点
+            lightCubeShader.setVec3("lightColor", 0.7f, 0.75f, 0.9f); // 半透明蓝白色
 
             for (const auto& particle : rainParticles) {
                 if (particle.active) {
                     model = glm::mat4(1.0f);
                     model = glm::translate(model, particle.position);
-                    model = glm::scale(model, glm::vec3(0.01f, 0.02f, 0.01f)); // 细长雨点
+                    model = glm::scale(model, glm::vec3(0.005f, 0.015f, 0.005f)); // 更细小的雨点
                     lightCubeShader.setMat4("model", model);
 
                     glBindVertexArray(lightCubeVAO);
@@ -1584,6 +1690,48 @@ int main()
                 }
             }
         }
+
+        // 绘制闪电（禁用深度测试，确保始终可见）
+        glDisable(GL_DEPTH_TEST);
+        for (const auto& lightning : lightnings) {
+            if (lightning.active) {
+                lightCubeShader.use();
+                lightCubeShader.setMat4("projection", projection);
+                lightCubeShader.setMat4("view", view);
+                
+                // 闪电颜色：极亮的蓝白电光
+                float brightness = lightning.life / lightning.maxLife;
+                if (brightness < 0.5f) brightness = 1.0f;
+                lightCubeShader.setVec3("lightColor", 3.0f * brightness, 3.2f * brightness, 4.0f * brightness);
+
+                // 绘制闪电的每一段（适中粗细的曲折电弧）
+                for (size_t i = 0; i < lightning.segments.size() - 1; i++) {
+                    glm::vec3 segStart = lightning.segments[i];
+                    glm::vec3 segEnd = lightning.segments[i + 1];
+                    glm::vec3 segCenter = (segStart + segEnd) * 0.5f;
+                    glm::vec3 segDir = glm::normalize(segEnd - segStart);
+                    float segLength = glm::length(segEnd - segStart);
+
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, segCenter);
+                    
+                    // 旋转使立方体沿着闪电方向
+                    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+                    if (abs(glm::dot(segDir, up)) < 0.999f) {
+                        glm::vec3 rotAxis = glm::normalize(glm::cross(up, segDir));
+                        float rotAngle = acos(glm::dot(up, segDir));
+                        model = glm::rotate(model, rotAngle, rotAxis);
+                    }
+                    
+                    model = glm::scale(model, glm::vec3(0.015f, segLength, 0.015f)); // 稍粗一点的闪电
+                    lightCubeShader.setMat4("model", model);
+
+                    glBindVertexArray(lightCubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+            }
+        }
+        glEnable(GL_DEPTH_TEST); // 恢复深度测试
 
         // ���ƵƷ���
         {
@@ -1659,6 +1807,21 @@ void processInput(GLFWwindow* window)
         if (!keyMPressed) {
             cloudVisible = !cloudVisible;
             cloudControlMode = !cloudControlMode;
+            
+            // 当云层消失时,停止所有天气效果并清空粒子
+            if (!cloudVisible) {
+                isRaining = false;
+                isSnowing = false;
+                // 清空所有雨粒子
+                for (auto& particle : rainParticles) {
+                    particle.active = false;
+                }
+                // 清空所有雪粒子
+                for (auto& particle : snowParticles) {
+                    particle.active = false;
+                }
+            }
+            
             keyMPressed = true;
             std::cout << "Cloud " << (cloudVisible ? "visible" : "hidden") 
                       << ", control mode " << (cloudControlMode ? "ON" : "OFF") << std::endl;
