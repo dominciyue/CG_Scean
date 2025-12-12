@@ -128,16 +128,40 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="camera.h" />
+    <ClInclude Include="config.h" />
+    <ClInclude Include="geometry_data.h" />
+    <ClInclude Include="input.h" />
+    <ClInclude Include="lamp_light.h" />
+    <ClInclude Include="mesh.h" />
+    <ClInclude Include="model_loader.h" />
+    <ClInclude Include="ray_picking.h" />
     <ClInclude Include="shader.h" />
+    <ClInclude Include="stb_image.h" />
+    <ClInclude Include="terrain.h" />
+    <ClInclude Include="texture_loader.h" />
+    <ClInclude Include="types.h" />
+    <ClInclude Include="weather.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="cyl.fs" />
+    <None Include="cyl.vs" />
     <None Include="lightcube.fs" />
     <None Include="lightcube.vs" />
     <None Include="lighting.fs" />
     <None Include="lighting.vs" />
+    <None Include="terrain.fs" />
+    <None Include="terrain.vs" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="input.cpp" />
+    <ClCompile Include="lamp_light.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="mesh.cpp" />
+    <ClCompile Include="model_loader.cpp" />
+    <ClCompile Include="ray_picking.cpp" />
+    <ClCompile Include="terrain.cpp" />
+    <ClCompile Include="texture_loader.cpp" />
+    <ClCompile Include="weather.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

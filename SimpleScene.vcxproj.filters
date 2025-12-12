@@ -21,6 +21,42 @@
     <ClInclude Include="shader.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="types.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="geometry_data.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="texture_loader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="model_loader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="mesh.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="terrain.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="weather.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="input.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="lamp_light.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ray_picking.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="lightcube.fs">
@@ -35,9 +71,45 @@
     <None Include="lighting.vs">
       <Filter>源文件</Filter>
     </None>
+    <None Include="terrain.fs">
+      <Filter>源文件</Filter>
+    </None>
+    <None Include="terrain.vs">
+      <Filter>源文件</Filter>
+    </None>
+    <None Include="cyl.fs">
+      <Filter>源文件</Filter>
+    </None>
+    <None Include="cyl.vs">
+      <Filter>源文件</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="texture_loader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="model_loader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="mesh.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="terrain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="weather.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="input.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="lamp_light.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ray_picking.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

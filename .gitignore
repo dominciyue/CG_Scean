@@ -3,29 +3,29 @@
 *.VC.db
 *.VC.opendb
 *.user
+CppProperties.json
 
-# 仅忽略构建输出目录，避免误伤资源（如 obj\*.obj 模型）
-/Debug/
-/Release/
-/x64/
-/SimpleScene/Debug/
-/SimpleScene/Release/
-/SimpleScene/x64/
-/SimpleScene/x64/Debug/
-/SimpleScene/x64/Release/
+# 构建输出目录（所有位置）
+Debug/
+Release/
+x64/
 
-# 可执行/调试产物（通常出现在上述目录，以下为兜底，不影响根目录资源）
+# 编译中间产物（不影响 obj/ 下的模型文件）
 *.pdb
 *.ilk
 *.ipdb
 *.iobj
-*.tlog
-*.log
 *.idb
 *.cache
 *.tmp
+
+# 日志文件
+*.tlog
+*.log
+
+# 可执行文件
 *.exe
 *.dll
 
-# VS 生成的项目文件（用户配置）
+# VS 生成的用户配置
 SimpleScene.vcxproj.user
