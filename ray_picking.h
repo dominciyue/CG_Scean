@@ -36,13 +36,19 @@ Ray screenToWorldRay(float screenX, float screenY,
 // Returns true if intersection occurs
 bool rayIntersectsSphere(const Ray& ray, const glm::vec3& sphereCenter, float sphereRadius);
 
-// Check if mouse click hit the lamp
-// Uses the lamp's bounding sphere for collision detection
+// Check if ray intersects a vertical cylinder (Y-axis aligned)
+// cylinderBase: center point at bottom of cylinder
+// radius: cylinder radius
+// height: cylinder height (extends upward from base)
+bool rayIntersectsCylinder(const Ray& ray, 
+                           const glm::vec3& cylinderBase,
+                           float radius, float height);
+
+// Check if mouse click hit the lamp shade (cylinder only, not base)
 bool checkLampClick(float mouseX, float mouseY,
                     int screenWidth, int screenHeight,
                     const glm::mat4& view, const glm::mat4& projection,
-                    const glm::vec3& cameraPos,
-                    const glm::vec3& lampPosition, float lampRadius);
+                    const glm::vec3& cameraPos);
 
 #endif // RAY_PICKING_H
 

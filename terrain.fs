@@ -19,11 +19,26 @@ uniform vec3 lampLightColor;
 uniform float lampLightIntensity;
 uniform float lampLightRadius;
 
+// Spirit orb light
+uniform bool orbEmitting;
+uniform vec3 orbLightPos;
+uniform vec3 orbLightColor;
+uniform float orbLightIntensity;
+uniform float orbLightRadius;
+
 // Calculate lamp light attenuation
 float calcLampAttenuation(float distance) {
     float constant = 1.0;
     float linear = 2.0;
     float quadratic = 3.0;
+    return 1.0 / (constant + linear * distance + quadratic * distance * distance);
+}
+
+// Calculate orb light attenuation
+float calcOrbAttenuation(float distance) {
+    float constant = 1.0;
+    float linear = 1.5;
+    float quadratic = 2.0;
     return 1.0 / (constant + linear * distance + quadratic * distance * distance);
 }
 
@@ -89,10 +104,32 @@ void main()
     }
     
     // =========================================
+    // Spirit Orb Light
+    // =========================================
+    vec3 orbResult = vec3(0.0);
+    
+    if (orbEmitting) {
+        vec3 orbDir = normalize(orbLightPos - FragPos);
+        float orbDistance = length(orbLightPos - FragPos);
+        float orbAttenuation = calcOrbAttenuation(orbDistance / orbLightRadius);
+        
+        vec3 orbAmbient = 0.15 * orbLightColor * orbLightIntensity * orbAttenuation;
+        
+        float orbDiff = max(dot(norm, orbDir), 0.0);
+        vec3 orbDiffuse = orbDiff * orbLightColor * orbLightIntensity * orbAttenuation;
+        
+        vec3 orbReflectDir = reflect(-orbDir, norm);
+        float orbSpec = pow(max(dot(viewDir, orbReflectDir), 0.0), 8);
+        vec3 orbSpecular = 0.3 * orbSpec * orbLightColor * orbLightIntensity * orbAttenuation;
+        
+        orbResult = orbAmbient + orbDiffuse + orbSpecular;
+    }
+    
+    // =========================================
     // Combine
     // =========================================
     float ao = 0.85 + 0.15 * heightFactor;
-    vec3 totalLight = mainLightResult + lampResult;
+    vec3 totalLight = mainLightResult + lampResult + orbResult;
     vec3 result = totalLight * baseColor * ao;
     
     FragColor = vec4(result, alpha);

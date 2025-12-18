@@ -30,6 +30,9 @@
 #include "input.h"
 #include "lamp_light.h"
 #include "ray_picking.h"
+#include "interactive_object.h"
+#include "puzzle_game.h"
+#include "spirit_orb.h"
 
 #include <iostream>
 #include <vector>
@@ -84,8 +87,8 @@ unsigned int generateChineseFloorTexture() {
                 
                 if (isInnerBorder && !isGrout) {
                     color = accentColor;
-                }
-                
+    }
+    
                 // Center pattern - simple Chinese motif
                 int centerX = tileSize / 2;
                 int centerY = tileSize / 2;
@@ -142,14 +145,14 @@ unsigned int generateChineseFloorTexture() {
     // Create OpenGL texture
     unsigned int textureID;
     glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+        glBindTexture(GL_TEXTURE_2D, textureID);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, texSize, texSize, 0, GL_RGB, GL_UNSIGNED_BYTE, textureData.data());
-    glGenerateMipmap(GL_TEXTURE_2D);
-    
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     
     return textureID;
 }
@@ -160,11 +163,11 @@ unsigned int generateChineseFloorTexture() {
 
 // 相机
 Camera camera(DEFAULT_CAMERA_POS);
-
+    
 // 光源位置
 glm::vec3 lightPos = DEFAULT_LIGHT_POS;
 glm::vec3 cubePos = DEFAULT_CUBE_POS;
-    
+
 // =====================================================================
 // 主函数
 // =====================================================================
@@ -223,6 +226,8 @@ int main()
     Shader lightCubeShader("lightcube.vs", "lightcube.fs");
     Shader terrainShader("terrain.vs", "terrain.fs");
     Shader lampShader("cyl.vs", "cyl.fs");  // 台灯着色器（圆柱投影）
+    Shader orbShader("orb.vs", "orb.fs");   // 灵珠发光着色器
+    Shader particleShader("particle.vs", "particle.fs");  // 粒子着色器
 
     // =====================================================================
     // 模型加载
@@ -248,6 +253,55 @@ int main()
     bool lampLoaded = false;
     if (loadOBJWithMaterials("obj/lamp1.obj", lampMeshes, "obj")) {
         lampLoaded = true;
+    }
+    
+    // Helper lambda to compute and print model bounds
+    auto printModelBounds = [](const std::vector<Mesh>& meshes, const char* name) {
+        if (meshes.empty()) return;
+        glm::vec3 minPos(1e9f), maxPos(-1e9f);
+        for (const auto& mesh : meshes) {
+            for (const auto& v : mesh.vertices) {
+                minPos = glm::min(minPos, v.Position);
+                maxPos = glm::max(maxPos, v.Position);
+    }
+        }
+        glm::vec3 size = maxPos - minPos;
+        std::cout << name << " bounds: min(" << minPos.x << "," << minPos.y << "," << minPos.z 
+                  << ") max(" << maxPos.x << "," << maxPos.y << "," << maxPos.z 
+                  << ") size(" << size.x << "," << size.y << "," << size.z << ")" << std::endl;
+    };
+    
+    // 花瓶模型 (directory must match OBJ file location for mtllib resolution)
+    std::vector<Mesh> vaseMeshes;
+    bool vaseLoaded = false;
+    if (loadOBJWithMaterials("obj/vase_obj/vase.obj", vaseMeshes, "obj/vase_obj")) {
+        vaseLoaded = true;
+        std::cout << "Vase model loaded: " << vaseMeshes.size() << " meshes" << std::endl;
+        printModelBounds(vaseMeshes, "Vase");
+    } else {
+        std::cerr << "Failed to load vase model!" << std::endl;
+    }
+    
+    // 书籍模型
+    std::vector<Mesh> bookMeshes;
+    bool bookLoaded = false;
+    if (loadOBJWithMaterials("obj/book_obj/book.obj", bookMeshes, "obj/book_obj")) {
+        bookLoaded = true;
+        std::cout << "Book model loaded: " << bookMeshes.size() << " meshes" << std::endl;
+        printModelBounds(bookMeshes, "Book");
+    } else {
+        std::cerr << "Failed to load book model!" << std::endl;
+    }
+    
+    // 卷轴模型
+    std::vector<Mesh> scrollMeshes;
+    bool scrollLoaded = false;
+    if (loadOBJWithMaterials("obj/scroll_obj/scroll.obj", scrollMeshes, "obj/scroll_obj")) {
+        scrollLoaded = true;
+        std::cout << "Scroll model loaded: " << scrollMeshes.size() << " meshes" << std::endl;
+        printModelBounds(scrollMeshes, "Scroll");
+    } else {
+        std::cerr << "Failed to load scroll model!" << std::endl;
     }
     
     // 计算台灯的Y坐标范围（用于圆柱投影着色器）
@@ -417,6 +471,43 @@ int main()
     // =====================================================================
     initLampLight();
 
+    // =====================================================================
+    // Initialize Puzzle Game System
+    // =====================================================================
+    initInteractiveObjects();
+    initPuzzleGame();
+    initSpiritOrb();
+    
+    // Add interactive objects to the scene
+    // Vase (rotatable) - click to spin, on desk left of sandbox
+    int vaseIdx = addInteractiveObject("Vase", ObjectType::ROTATABLE, VASE_POSITION, 0.08f);
+    g_interactiveObjects[vaseIdx].scale = glm::vec3(VASE_SCALE);
+    g_interactiveObjects[vaseIdx].baseColor = glm::vec3(0.9f, 0.9f, 0.95f);  // Blue-white porcelain
+    g_interactiveObjects[vaseIdx].highlightColor = glm::vec3(1.0f, 0.9f, 0.5f);
+    
+    // Book (movable) - click to slide, on desk right of sandbox
+    int bookIdx = addInteractiveObject("Book", ObjectType::MOVABLE, BOOK_POSITION, 0.08f);
+    g_interactiveObjects[bookIdx].scale = glm::vec3(BOOK_SCALE);
+    g_interactiveObjects[bookIdx].baseColor = glm::vec3(0.6f, 0.4f, 0.3f);  // Brown leather
+    g_interactiveObjects[bookIdx].highlightColor = glm::vec3(1.0f, 0.9f, 0.5f);
+    
+    // Scroll - THE MECHANISM (correct puzzle trigger) - click to slide and reveal orb
+    int scrollIdx = addInteractiveObject("Scroll", ObjectType::MECHANISM, SCROLL_POSITION, 0.1f);
+    g_interactiveObjects[scrollIdx].scale = glm::vec3(SCROLL_SCALE);
+    g_interactiveObjects[scrollIdx].baseColor = glm::vec3(0.85f, 0.75f, 0.6f);  // Bamboo/parchment
+    g_interactiveObjects[scrollIdx].highlightColor = glm::vec3(1.0f, 0.8f, 0.3f);
+    
+    // Generate puzzle meshes
+    Mesh floorTileMesh, compartmentMesh, orbMesh, glowQuadMesh;
+    generateFloorTileMesh(floorTileMesh);
+    setupMesh(floorTileMesh);
+    generateCompartmentMesh(compartmentMesh);
+    setupMesh(compartmentMesh);
+    generateOrbMesh(orbMesh);
+    setupMesh(orbMesh);
+    generateGlowQuadMesh(glowQuadMesh);
+    setupMesh(glowQuadMesh);
+
     // Cloud sphere positions
     std::vector<glm::vec3> cloudSpheres;
     for (int i = 0; i < CLOUD_SPHERE_COUNT; i++) {
@@ -437,9 +528,16 @@ int main()
 
         // 输入处理
         processInput(window, camera);
-
+        
         // 更新天气系统
         updateWeather(deltaTime, terrainMesh.vertices);
+        
+        // 更新解谜游戏系统
+        updateInteractiveObjects(deltaTime);
+        updatePuzzleGame(deltaTime);
+        if (shouldRenderOrb()) {
+            updateSpiritOrb(deltaTime, getOrbPosition());
+        }
 
         // 清屏
         glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
@@ -457,6 +555,14 @@ int main()
 
         // Store matrices for ray picking (mouse click detection)
         setViewProjectionMatrices(view, projection);
+        
+        // Handle object selection via mouse hover (after matrices are ready)
+        double mouseX, mouseY;
+        glfwGetCursorPos(window, &mouseX, &mouseY);
+        int windowW, windowH;
+        glfwGetWindowSize(window, &windowW, &windowH);
+        g_hoveredObjectIndex = pickObject(static_cast<float>(mouseX), static_cast<float>(mouseY),
+                                          windowW, windowH, view, projection, camera.Position);
 
         // Get lamp light position
         glm::vec3 lampLightPos = getLampLightPosition();
@@ -465,8 +571,8 @@ int main()
         // Render Room (with room scale applied)
         // =====================================================================
         lightingShader.use();
-        lightingShader.setMat4("projection", projection);
-        lightingShader.setMat4("view", view);
+            lightingShader.setMat4("projection", projection);
+            lightingShader.setMat4("view", view);
         lightingShader.setVec3("lightColor", 1.5f, 1.5f, 1.5f);
             lightingShader.setVec3("lightPos", lightPos);
             lightingShader.setVec3("viewPos", camera.Position);
@@ -479,6 +585,14 @@ int main()
         lightingShader.setVec3("lampLightColor", lampLightColor);
         lightingShader.setFloat("lampLightIntensity", lampLightIntensity);
         lightingShader.setFloat("lampLightRadius", lampLightRadius);
+        
+        // Set spirit orb light uniforms
+        glm::vec3 orbLightPos = getOrbPosition();
+        lightingShader.setBool("orbEmitting", isOrbEmittingLight());
+        lightingShader.setVec3("orbLightPos", orbLightPos);
+        lightingShader.setVec3("orbLightColor", ORB_COLOR_CORE);
+        lightingShader.setFloat("orbLightIntensity", getOrbLightIntensity());
+        lightingShader.setFloat("orbLightRadius", ORB_LIGHT_RADIUS);
 
         // Room base transform with scale
         glm::mat4 roomModel = glm::translate(glm::mat4(1.0f), cubePos);
@@ -501,7 +615,35 @@ int main()
             lightingShader.setMat4("model", roomModel);
             glBindVertexArray(FloorVAO);
             glDrawArrays(GL_TRIANGLES, 0, 6);
-        lightingShader.setBool("hasTexture", false);
+            lightingShader.setBool("hasTexture", false);
+
+        // Render hole in floor when tile is open (black square to cover floor)
+        if (g_secretTile.isOpen || g_secretTile.isAnimating) {
+            lightingShader.setVec3("objectColor", 0.02f, 0.01f, 0.01f);  // Very dark (hole)
+            lightingShader.setBool("hasTexture", false);
+            
+            // Position the hole at tile location, at floor level to cover it
+            // lightCubeVAO is a unit cube (-0.5 to 0.5), need to position and scale correctly
+            glm::mat4 holeModel = glm::mat4(1.0f);
+            // Move to center of where tile should be (tile starts at position, extends +X and +Z)
+            float halfW = COMPARTMENT_SIZE_CONFIG.x * 0.5f;
+            float halfD = COMPARTMENT_SIZE_CONFIG.z * 0.5f;
+            holeModel = glm::translate(holeModel, glm::vec3(
+                g_secretTile.position.x + halfW,  // Center X
+                FLOOR_HEIGHT + 0.002f,            // At floor level (tiny offset to avoid z-fighting)
+                g_secretTile.position.z + halfD   // Center Z
+            ));
+            holeModel = glm::scale(holeModel, glm::vec3(
+                COMPARTMENT_SIZE_CONFIG.x + 0.005f,  // Slightly wider to cover edges
+                0.003f,                              // Very thin
+                COMPARTMENT_SIZE_CONFIG.z + 0.005f   // Slightly deeper to cover edges
+            ));
+            lightingShader.setMat4("model", holeModel);
+            
+            // Use light cube as a flat box to cover the floor
+            glBindVertexArray(lightCubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
 
         // Left wall
         lightingShader.setVec3("objectColor", 0.6f, 0.3f, 0.2f);
@@ -649,6 +791,13 @@ int main()
             terrainShader.setFloat("lampLightIntensity", lampLightIntensity);
             terrainShader.setFloat("lampLightRadius", lampLightRadius);
             
+            // Set spirit orb light uniforms for terrain
+            terrainShader.setBool("orbEmitting", isOrbEmittingLight());
+            terrainShader.setVec3("orbLightPos", orbLightPos);
+            terrainShader.setVec3("orbLightColor", ORB_COLOR_CORE);
+            terrainShader.setFloat("orbLightIntensity", getOrbLightIntensity());
+            terrainShader.setFloat("orbLightRadius", ORB_LIGHT_RADIUS);
+            
         model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.57f, 0.57f));
             terrainShader.setMat4("model", model);
             glBindVertexArray(terrainMesh.VAO);
@@ -780,6 +929,169 @@ int main()
         }
         glEnable(GL_DEPTH_TEST);
 
+        // =====================================================================
+        // 渲染解谜游戏元素
+        // =====================================================================
+        
+        // Render interactive objects (vase, book, scroll)
+        lightingShader.use();
+        lightingShader.setMat4("projection", projection);
+        lightingShader.setMat4("view", view);
+        lightingShader.setFloat("alpha", 1.0f);
+        
+        for (size_t i = 0; i < g_interactiveObjects.size(); i++) {
+            const InteractiveObject& obj = g_interactiveObjects[i];
+            
+            // Set color (highlight if selected or hovered)
+            glm::vec3 color = obj.baseColor;
+            if (obj.isSelected) {
+                color = obj.highlightColor;
+            } else if (static_cast<int>(i) == g_hoveredObjectIndex) {
+                color = glm::mix(obj.baseColor, obj.highlightColor, 0.5f);
+            }
+            lightingShader.setVec3("objectColor", color);
+            
+            // Apply object transform
+            glm::mat4 objModel = getObjectModelMatrix(static_cast<int>(i));
+            lightingShader.setMat4("model", objModel);
+            
+            // Render with actual model meshes
+            if (i == 0 && vaseLoaded && !vaseMeshes.empty()) {
+                // Vase
+                for (const auto& mesh : vaseMeshes) {
+                    if (!mesh.textures.empty() && mesh.textures[0].id != 0) {
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, mesh.textures[0].id);
+                        lightingShader.setInt("texture1", 0);
+                        lightingShader.setBool("hasTexture", true);
+                    } else {
+                        lightingShader.setBool("hasTexture", false);
+                    }
+                    glBindVertexArray(mesh.VAO);
+                    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, 0);
+                }
+            } else if (i == 1 && bookLoaded && !bookMeshes.empty()) {
+                // Book
+                for (const auto& mesh : bookMeshes) {
+                    if (!mesh.textures.empty() && mesh.textures[0].id != 0) {
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, mesh.textures[0].id);
+                        lightingShader.setInt("texture1", 0);
+                        lightingShader.setBool("hasTexture", true);
+                    } else {
+                        lightingShader.setBool("hasTexture", false);
+                    }
+                    glBindVertexArray(mesh.VAO);
+                    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, 0);
+                }
+            } else if (i == 2 && scrollLoaded && !scrollMeshes.empty()) {
+                // Scroll
+                for (const auto& mesh : scrollMeshes) {
+                    if (!mesh.textures.empty() && mesh.textures[0].id != 0) {
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, mesh.textures[0].id);
+                        lightingShader.setInt("texture1", 0);
+                        lightingShader.setBool("hasTexture", true);
+                    } else {
+                        lightingShader.setBool("hasTexture", false);
+                    }
+                    glBindVertexArray(mesh.VAO);
+                    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, 0);
+                }
+            } else {
+                // Fallback to cube
+                lightingShader.setBool("hasTexture", false);
+                    glBindVertexArray(lightCubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+            }
+        
+        // Render secret compartment (dark hole box) - visible when tile opens
+        if (g_compartment.isVisible || g_secretTile.isOpen || g_secretTile.isAnimating) {
+            lightingShader.use();
+            lightingShader.setVec3("objectColor", 0.08f, 0.05f, 0.03f);  // Dark brown/black interior
+            lightingShader.setBool("hasTexture", false);
+            
+            // Compartment is below the floor tile
+            // Position: SECRET_TILE_POS - (0, COMPARTMENT_SIZE.y, 0)
+            glm::mat4 compModel = glm::mat4(1.0f);
+            compModel = glm::translate(compModel, g_compartment.position);
+            lightingShader.setMat4("model", compModel);
+            
+            glBindVertexArray(compartmentMesh.VAO);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(compartmentMesh.indices.size()), GL_UNSIGNED_INT, 0);
+        }
+        
+        // Render floor tile - ALWAYS render (as part of floor when closed, animated when open)
+        {
+            lightingShader.use();
+            lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);  // White to show texture
+            
+            // Apply floor texture to the tile
+            if (floorTexture != 0) {
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, floorTexture);
+                lightingShader.setInt("texture1", 0);
+                lightingShader.setBool("hasTexture", true);
+            } else {
+                lightingShader.setBool("hasTexture", false);
+            }
+            
+            glm::mat4 tileModel = getFloorTileMatrix();
+            lightingShader.setMat4("model", tileModel);
+            
+            glBindVertexArray(floorTileMesh.VAO);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(floorTileMesh.indices.size()), GL_UNSIGNED_INT, 0);
+            lightingShader.setBool("hasTexture", false);
+        }
+        
+        // Render spirit orb with glow effect
+        if (shouldRenderOrb()) {
+            // Enable additive blending for glow
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            
+            orbShader.use();
+            orbShader.setMat4("projection", projection);
+            orbShader.setMat4("view", view);
+            orbShader.setMat4("model", getOrbModelMatrix());
+            orbShader.setVec3("viewPos", camera.Position);
+            orbShader.setVec3("coreColor", g_spiritOrb.coreColor);
+            orbShader.setVec3("glowColor", g_spiritOrb.glowColor);
+            orbShader.setFloat("glowIntensity", getOrbGlowIntensity());
+            orbShader.setFloat("time", static_cast<float>(glfwGetTime()));
+            
+            glBindVertexArray(orbMesh.VAO);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(orbMesh.indices.size()), GL_UNSIGNED_INT, 0);
+            
+            // Render glow particles
+            particleShader.use();
+            particleShader.setMat4("projection", projection);
+            particleShader.setMat4("view", view);
+            particleShader.setVec3("particleColor", g_spiritOrb.particleColor);
+            
+            const auto& particles = getOrbParticles();
+            for (const auto& particle : particles) {
+                if (particle.active) {
+                    particleShader.setVec3("particlePos", particle.position);
+                    particleShader.setFloat("particleSize", particle.size);
+                    particleShader.setFloat("particleAlpha", particle.alpha * 0.6f);
+                    
+                    glBindVertexArray(glowQuadMesh.VAO);
+                    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(glowQuadMesh.indices.size()), GL_UNSIGNED_INT, 0);
+                }
+            }
+            
+            // Reset blending
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        }
+        
+        // Game complete message (could add UI rendering here)
+        if (getGameState() == GameState::GAME_COMPLETE) {
+            // Victory! The orb has been collected
+            // Could render a congratulations message or effect here
+        }
+
         // 光源立方体
             lightCubeShader.use();
             lightCubeShader.setMat4("projection", projection);
@@ -826,8 +1138,25 @@ int main()
     for (auto& mesh : lampMeshes) {
         cleanupMesh(mesh);
                 }
-    
+    for (auto& mesh : vaseMeshes) {
+        cleanupMesh(mesh);
+    }
+    for (auto& mesh : bookMeshes) {
+        cleanupMesh(mesh);
+    }
+    for (auto& mesh : scrollMeshes) {
+        cleanupMesh(mesh);
+    }
+
     cleanupWeatherSystem();
+    cleanupInteractiveObjects();
+    cleanupPuzzleGame();
+    cleanupSpiritOrb();
+    
+    cleanupMesh(floorTileMesh);
+    cleanupMesh(compartmentMesh);
+    cleanupMesh(orbMesh);
+    cleanupMesh(glowQuadMesh);
 
     glfwTerminate();
     return 0;

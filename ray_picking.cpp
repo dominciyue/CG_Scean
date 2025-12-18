@@ -1,4 +1,6 @@
 #include "ray_picking.h"
+#include "lamp_light.h"
+#include "config.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
 
@@ -65,16 +67,62 @@ bool rayIntersectsSphere(const Ray& ray, const glm::vec3& sphereCenter, float sp
     return (t1 > 0.0f || t2 > 0.0f);
 }
 
+bool rayIntersectsCylinder(const Ray& ray, 
+                           const glm::vec3& cylinderBase,
+                           float radius, float height) {
+    // Ray-cylinder intersection for Y-axis aligned cylinder
+    // Project ray onto XZ plane for infinite cylinder test
+    
+    // Ray origin relative to cylinder base
+    glm::vec3 oc = ray.origin - cylinderBase;
+    
+    // Coefficients for quadratic equation (only X and Z components)
+    float a = ray.direction.x * ray.direction.x + ray.direction.z * ray.direction.z;
+    float b = 2.0f * (oc.x * ray.direction.x + oc.z * ray.direction.z);
+    float c = oc.x * oc.x + oc.z * oc.z - radius * radius;
+    
+    float discriminant = b * b - 4.0f * a * c;
+    
+    if (discriminant < 0) {
+        return false;  // No intersection with infinite cylinder
+    }
+    
+    float sqrtDisc = sqrt(discriminant);
+    float t1 = (-b - sqrtDisc) / (2.0f * a);
+    float t2 = (-b + sqrtDisc) / (2.0f * a);
+    
+    // Check first intersection point
+    if (t1 > 0.0f) {
+        float y1 = ray.origin.y + t1 * ray.direction.y;
+        if (y1 >= cylinderBase.y && y1 <= cylinderBase.y + height) {
+            return true;
+        }
+    }
+    
+    // Check second intersection point
+    if (t2 > 0.0f) {
+        float y2 = ray.origin.y + t2 * ray.direction.y;
+        if (y2 >= cylinderBase.y && y2 <= cylinderBase.y + height) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 bool checkLampClick(float mouseX, float mouseY,
                     int screenWidth, int screenHeight,
                     const glm::mat4& view, const glm::mat4& projection,
-                    const glm::vec3& cameraPos,
-                    const glm::vec3& lampPosition, float lampRadius) {
+                    const glm::vec3& cameraPos) {
     // Generate ray from mouse position
     Ray ray = screenToWorldRay(mouseX, mouseY, screenWidth, screenHeight,
                                view, projection, cameraPos);
     
-    // Check intersection with lamp's bounding sphere
-    return rayIntersectsSphere(ray, lampPosition, lampRadius);
+    // Calculate lamp shade cylinder position (only the shade, not base)
+    glm::vec3 shadeBase = LAMP_POSITION + glm::vec3(0.0f, LAMP_SHADE_HEIGHT_MIN, 0.0f);
+    float shadeHeight = LAMP_SHADE_HEIGHT_MAX - LAMP_SHADE_HEIGHT_MIN;
+    
+    // Check intersection with lamp shade cylinder
+    return rayIntersectsCylinder(ray, shadeBase, LAMP_SHADE_RADIUS, shadeHeight);
 }
 

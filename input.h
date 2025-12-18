@@ -8,6 +8,11 @@
 // Forward declaration of GLFWwindow to avoid header conflicts
 struct GLFWwindow;
 
+// Mouse drag state for object interaction
+extern bool mouseDragging;
+extern double dragStartX;
+extern double dragStartY;
+
 // =====================================================================
 // Input State (Global Variable Declarations)
 // =====================================================================

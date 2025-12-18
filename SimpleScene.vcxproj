@@ -131,11 +131,14 @@
     <ClInclude Include="config.h" />
     <ClInclude Include="geometry_data.h" />
     <ClInclude Include="input.h" />
+    <ClInclude Include="interactive_object.h" />
     <ClInclude Include="lamp_light.h" />
     <ClInclude Include="mesh.h" />
     <ClInclude Include="model_loader.h" />
+    <ClInclude Include="puzzle_game.h" />
     <ClInclude Include="ray_picking.h" />
     <ClInclude Include="shader.h" />
+    <ClInclude Include="spirit_orb.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="terrain.h" />
     <ClInclude Include="texture_loader.h" />
@@ -149,16 +152,23 @@
     <None Include="lightcube.vs" />
     <None Include="lighting.fs" />
     <None Include="lighting.vs" />
+    <None Include="orb.fs" />
+    <None Include="orb.vs" />
+    <None Include="particle.fs" />
+    <None Include="particle.vs" />
     <None Include="terrain.fs" />
     <None Include="terrain.vs" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="input.cpp" />
+    <ClCompile Include="interactive_object.cpp" />
     <ClCompile Include="lamp_light.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mesh.cpp" />
     <ClCompile Include="model_loader.cpp" />
+    <ClCompile Include="puzzle_game.cpp" />
     <ClCompile Include="ray_picking.cpp" />
+    <ClCompile Include="spirit_orb.cpp" />
     <ClCompile Include="terrain.cpp" />
     <ClCompile Include="texture_loader.cpp" />
     <ClCompile Include="weather.cpp" />

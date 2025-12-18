@@ -25,8 +25,12 @@ const glm::vec3 DEFAULT_LAMP_LIGHT_COLOR(1.0f, 0.9f, 0.7f);  // Warm white
 const float DEFAULT_LAMP_LIGHT_INTENSITY = 1.5f;
 const float DEFAULT_LAMP_LIGHT_RADIUS = 0.8f;  // Light falloff radius
 
-// Lamp collision detection radius (for mouse picking)
-const float LAMP_CLICK_RADIUS = 0.15f;
+// Lamp shade (cylinder) collision parameters for mouse picking
+// Based on lamp1.obj: shade is roughly from Y=0.5 to Y=1.4 in model space
+// After scaling by LAMP_SCALE=0.08, height ~0.072
+const float LAMP_SHADE_RADIUS = 0.045f;      // Cylinder radius of lamp shade
+const float LAMP_SHADE_HEIGHT_MIN = 0.04f;   // Bottom of shade relative to LAMP_POSITION.y
+const float LAMP_SHADE_HEIGHT_MAX = 0.12f;   // Top of shade relative to LAMP_POSITION.y
 
 // =====================================================================
 // Lamp Light Functions

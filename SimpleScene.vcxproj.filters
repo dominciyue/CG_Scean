@@ -57,6 +57,15 @@
     <ClInclude Include="ray_picking.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="interactive_object.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="puzzle_game.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="spirit_orb.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="lightcube.fs">
@@ -81,6 +90,18 @@
       <Filter>源文件</Filter>
     </None>
     <None Include="cyl.vs">
+      <Filter>源文件</Filter>
+    </None>
+    <None Include="orb.fs">
+      <Filter>源文件</Filter>
+    </None>
+    <None Include="orb.vs">
+      <Filter>源文件</Filter>
+    </None>
+    <None Include="particle.fs">
+      <Filter>源文件</Filter>
+    </None>
+    <None Include="particle.vs">
       <Filter>源文件</Filter>
     </None>
   </ItemGroup>
@@ -110,6 +131,15 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ray_picking.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="interactive_object.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="puzzle_game.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="spirit_orb.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
