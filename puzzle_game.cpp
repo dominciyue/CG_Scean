@@ -14,7 +14,7 @@ bool g_orbCollected = false;
 
 // Animation parameters
 const float TILE_FLIP_SPEED = 120.0f;  // Degrees per second
-const float TILE_OPEN_ANGLE = -90.0f;  // Rotation when fully open
+const float TILE_OPEN_ANGLE = -90.0f;   // Rotation when fully open (positive = flip toward window/back)
 
 // Positions (relative to room) - use config values
 const glm::vec3 SECRET_TILE_POS = SECRET_TILE_POSITION;
@@ -32,8 +32,13 @@ void initPuzzleGame() {
     g_secretTile.isAnimating = false;
     g_secretTile.isOpen = false;
     
-    // Initialize compartment
-    g_compartment.position = SECRET_TILE_POS - glm::vec3(0.0f, COMPARTMENT_SIZE.y, 0.0f);
+    // Initialize compartment - positioned below the tile
+    // When tile flips toward window (negative Z), compartment opens toward camera (positive Z)
+    g_compartment.position = glm::vec3(
+        SECRET_TILE_POS.x,
+        SECRET_TILE_POS.y - COMPARTMENT_SIZE.y,  // Below the tile
+        SECRET_TILE_POS.z                         // Same Z as tile front edge
+    );
     g_compartment.size = COMPARTMENT_SIZE;
     g_compartment.isVisible = false;
     
@@ -133,12 +138,10 @@ glm::mat4 getFloorTileMatrix() {
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, g_secretTile.position);
     
-    // Rotate around the back edge (hinge point at z = depth)
-    // Tile flips open toward the camera
-    float halfDepth = COMPARTMENT_SIZE.z * 0.5f;
-    model = glm::translate(model, glm::vec3(0.0f, 0.0f, COMPARTMENT_SIZE.z));
+    // Rotate around the front edge (hinge point at z = 0)
+    // Tile flips open toward the window (backward direction)
+    // When rotation is 90 degrees, tile stands vertical behind the compartment
     model = glm::rotate(model, glm::radians(g_secretTile.rotation), glm::vec3(1.0f, 0.0f, 0.0f));
-    model = glm::translate(model, glm::vec3(0.0f, 0.0f, -COMPARTMENT_SIZE.z));
     
     return model;
 }
