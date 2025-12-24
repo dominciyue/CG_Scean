@@ -19,17 +19,17 @@ const glm::vec3 DEFAULT_CUBE_POS(0.0f, 0.8f, 0.2f);
 // =====================================================================
 // Room Size Parameters (can be adjusted to enlarge room)
 // =====================================================================
-const float ROOM_SCALE_X = 1.2f;   // Width scale (default 1.0)
+const float ROOM_SCALE_X = 1.8f;   // Width scale (default 1.0)
 const float ROOM_SCALE_Y = 1.0f;   // Height scale
 const float ROOM_SCALE_Z = 1.2f;   // Depth scale
 
 // =====================================================================
-// Terrain Parameters
+// Terrain Parameters (sandbox terrain size - smaller than table width)
 // =====================================================================
 const int TERRAIN_GRID_SIZE = 128;
-const float TERRAIN_SCALE_X = 0.3f;
-const float TERRAIN_SCALE_Z = 0.225f;
-const float TERRAIN_HEIGHT_SCALE = 0.12f;
+const float TERRAIN_SCALE_X = 0.18f;    // Reduced to fit on table
+const float TERRAIN_SCALE_Z = 0.135f;   // Reduced proportionally
+const float TERRAIN_HEIGHT_SCALE = 0.08f; // Lower height for smaller sandbox
 
 // =====================================================================
 // Weather System Parameters
@@ -42,18 +42,18 @@ const float MAX_SNOW_HEIGHT = 0.05f;
 const float SNOW_ACCUMULATION_RATE = 0.0002f;
 
 // =====================================================================
-// Cloud Parameters
+// Sandbox Boundary Parameters (on desk, adjusted for new table position)
 // =====================================================================
-const glm::vec3 DEFAULT_CLOUD_POS(0.0f, 0.8f, 0.5f);
-const float CLOUD_MOVE_SPEED = 2.5f;
+const float SANDBOX_CENTER_X = -0.38f;   // Aligned with table X
+const float SANDBOX_CENTER_Z = 0.2f;    // Aligned with table Z
+const float SANDBOX_HALF_WIDTH = 0.09f;  // Half of terrain width
+const float SANDBOX_HALF_DEPTH = 0.0675f; // Half of terrain depth
 
 // =====================================================================
-// Sandbox Boundary Parameters
+// Cloud Parameters (aligned with sandbox center)
 // =====================================================================
-const float SANDBOX_CENTER_X = 0.0f;
-const float SANDBOX_CENTER_Z = 0.6f;
-const float SANDBOX_HALF_WIDTH = 0.15f;
-const float SANDBOX_HALF_DEPTH = 0.1125f;
+const glm::vec3 DEFAULT_CLOUD_POS(-0.38f, 0.8f, 0.2f);  // Same X,Z as sandbox center
+const float CLOUD_MOVE_SPEED = 2.5f;
 
 // =====================================================================
 // Camera Default Parameters
@@ -61,9 +61,23 @@ const float SANDBOX_HALF_DEPTH = 0.1125f;
 const glm::vec3 DEFAULT_CAMERA_POS(0.0f, 1.0f, 2.0f);
 
 // =====================================================================
-// Lamp Model Parameters
+// Table Position Parameters (table against right wall, facing left wall)
 // =====================================================================
-const glm::vec3 LAMP_POSITION(0.33f, 0.485f, 0.58f);
+const glm::vec3 TABLE_POSITION(-0.52f, 0.3f, 0.2f);  // Near right wall, centered Z
+const float TABLE_ROTATION = 0.0f;                  // Facing left wall (toward -X)
+const float TABLE_SCALE = 0.08f;
+
+// =====================================================================
+// Bookcase Position Parameters (against left wall, facing right)
+// =====================================================================
+const glm::vec3 BOOKCASE_POSITION(0.80f, 0.6f, 0.2f);  // Near left wall (X positive side)
+const float BOOKCASE_ROTATION = 270.0f;               // Facing toward desk
+const float BOOKCASE_SCALE = 0.03f;                   // Scale to fit room height
+
+// =====================================================================
+// Lamp Model Parameters (on desk, relative to new table position)
+// =====================================================================
+const glm::vec3 LAMP_POSITION(-0.4f, 0.485f, 0.6f);  // On desk, front-left corner
 const float LAMP_SCALE = 0.08f;
 const float LAMP_ROTATION = 0.0f;
 
@@ -71,11 +85,11 @@ const float LAMP_ROTATION = 0.0f;
 // Puzzle Game Parameters
 // =====================================================================
 
-// Interactive objects positions (desk surface at y~0.52, floor at y~-0.48)
-// Vase and Book on desk at sandbox center line (Z~0.6), Scroll on floor symmetric to lamp
-const glm::vec3 VASE_POSITION(-0.2f, 0.54f, 0.6f);        // Vase on desk left of sandbox center
-const glm::vec3 BOOK_POSITION(0.2f, 0.54f, 0.6f);         // Book on desk right of sandbox center
-const glm::vec3 SCROLL_POSITION(-0.33f, 0.3f, 0.58f);    // Scroll on floor, symmetric to lamp (lamp at x=0.33)
+// Interactive objects positions (desk surface at y~0.52, floor at y~0.3)
+// Objects on desk near table position (X~0.45, Z~0.2)
+const glm::vec3 VASE_POSITION(-0.42f, 0.54f, 0.05f);       // Vase on desk, back side
+const glm::vec3 BOOK_POSITION(-0.42f, 0.54f, 0.4f);       // Book on desk, front side (near sandbox)
+const glm::vec3 SCROLL_POSITION(-0.2f, 0.3f, 0.5f);        // Scroll on floor, in front of desk
 
 // Object scales (models are ~1 unit, scale to fit scene ~0.1 units)
 const float VASE_SCALE = 0.08f;      // Height ~1.15 -> 0.09 units
@@ -91,12 +105,11 @@ const float OBJECT_PICK_RADIUS = 0.08f;     // Picking bounding sphere
 // Room floor is at Y = DEFAULT_CUBE_POS.y - 0.5 = 0.8 - 0.5 = 0.3
 const float FLOOR_HEIGHT = 0.3f;  // Ground level Y coordinate
 
-// Secret tile position (where the spirit orb is hidden) - between desk and window
-// Must be within room bounds: X near 0, Z between desk(0.6) and window(-0.4)
-// Room center Z is at DEFAULT_CUBE_POS.z = 0.2
-// Tile thickness is 0.01, so position Y = FLOOR_HEIGHT - 0.01 to make top surface flush with floor
+// Secret tile position (where the spirit orb is hidden)
+// Now in center of room, away from new desk position (desk is at X=0.45)
+// Room center is near (0, 0.2), placing tile at center-left area
 const float TILE_THICKNESS = 0.01f;
-const glm::vec3 SECRET_TILE_POSITION(0.0f, FLOOR_HEIGHT - TILE_THICKNESS, 0.1f);  // Top surface at floor level
+const glm::vec3 SECRET_TILE_POSITION(-0.1f, FLOOR_HEIGHT - TILE_THICKNESS, 0.2f);  // Center-left area
 const glm::vec3 COMPARTMENT_SIZE_CONFIG(0.15f, 0.2f, 0.15f);  // Compartment size (deeper)
 
 // Spirit orb parameters

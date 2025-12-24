@@ -66,6 +66,9 @@
     <ClInclude Include="spirit_orb.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="arrow_trap.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="lightcube.fs">
@@ -140,6 +143,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="spirit_orb.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="arrow_trap.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

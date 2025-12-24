@@ -1,10 +1,11 @@
-#include "input.h"
+﻿#include "input.h"
 #include "weather.h"
 #include "config.h"
 #include "lamp_light.h"
 #include "ray_picking.h"
 #include "interactive_object.h"
 #include "puzzle_game.h"
+#include "arrow_trap.h"
 
 // Must include glad before GLFW
 #include <glad/glad.h>
@@ -115,6 +116,18 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
             if (g_camera) {
                 // Spirit orb click - do nothing (orb should stay visible)
                 // Players can admire the orb but it won't disappear
+                
+                // Check if wall compartment door was clicked (arrow trap)
+                if (checkCompartmentClick(
+                    static_cast<float>(mouseClickX),
+                    static_cast<float>(mouseClickY),
+                    actualWindowWidth, actualWindowHeight,
+                    g_viewMatrix, g_projectionMatrix,
+                    g_camera->Position
+                )) {
+                    triggerArrowTrap();
+                    return;
+                }
                 
                 // Check if lamp shade (cylinder) was clicked
                 bool lampHit = checkLampClick(

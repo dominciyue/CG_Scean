@@ -13,7 +13,8 @@ enum class ObjectType {
     STATIC,         // Cannot be interacted with
     MOVABLE,        // Can be moved
     ROTATABLE,      // Can be rotated
-    MECHANISM       // Trigger mechanism (correct puzzle answer)
+    MECHANISM,      // Trigger mechanism (correct puzzle answer)
+    DECOY           // Decoy trap trigger (triggers arrow trap)
 };
 
 // Interactive object structure

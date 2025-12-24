@@ -73,14 +73,17 @@ void updateRainParticles(float deltaTime) {
             particle.position += particle.velocity * deltaTime;
             particle.life -= deltaTime;
 
-            // Collision detection with terrain (terrain starts at y=0.6)
+            // Collision detection with terrain (terrain at sandbox Y position)
             if (particle.position.y <= 0.6f || particle.life <= 0.0f) {
                 particle.active = false;
             }
         } else {
-            // Activate new particle
+            // Activate new particle (spawn from cloud position, scaled to sandbox size)
             if (dist(gen) > 0.3f) {
-                particle.position = cloudPosition + glm::vec3(dist(gen) * 0.15f, -0.05f, dist(gen) * 0.1125f);
+                particle.position = cloudPosition + glm::vec3(
+                    dist(gen) * SANDBOX_HALF_WIDTH, 
+                    -0.05f, 
+                    dist(gen) * SANDBOX_HALF_DEPTH);
                 particle.velocity = glm::vec3(0.0f, -5.0f, 0.0f);
                 particle.life = 3.0f;
                 particle.active = true;
@@ -96,12 +99,12 @@ void updateSnowParticles(float deltaTime, std::vector<Vertex>& terrainVertices) 
         if (particle.active) {
             // Update position (snow falls with horizontal drift)
             particle.position += particle.velocity * deltaTime;
-            particle.position.x += sin(particle.life * 2.0f) * 0.1f * deltaTime;
+            particle.position.x += sin(particle.life * 2.0f) * 0.05f * deltaTime;  // Reduced drift for smaller sandbox
             particle.life += deltaTime;
 
-            // Collision detection - terrain starts at y=0.6
-            float terrainCenterX = 0.0f;
-            float terrainCenterZ = 0.6f;
+            // Collision detection - use sandbox center from config
+            float terrainCenterX = SANDBOX_CENTER_X;
+            float terrainCenterZ = SANDBOX_CENTER_Z;
             
             // Particle position relative to terrain center
             float relativeX = particle.position.x - terrainCenterX;
@@ -139,9 +142,12 @@ void updateSnowParticles(float deltaTime, std::vector<Vertex>& terrainVertices) 
                 }
             }
         } else {
-            // Activate new particle (spawn from cloud position)
+            // Activate new particle (spawn from cloud position, scaled to sandbox size)
             if (dist(gen) > 0.4f) {
-                particle.position = cloudPosition + glm::vec3(dist(gen) * 0.15f, -0.05f, dist(gen) * 0.1125f);
+                particle.position = cloudPosition + glm::vec3(
+                    dist(gen) * SANDBOX_HALF_WIDTH, 
+                    -0.05f, 
+                    dist(gen) * SANDBOX_HALF_DEPTH);
                 particle.velocity = glm::vec3(0.0f, -1.5f, 0.0f); // Snow falls slower than rain
                 particle.life = 0.0f;
                 particle.active = true;
@@ -159,9 +165,12 @@ void updateLightning(float deltaTime) {
         if (lightningTimer >= lightningInterval) {
             lightningTimer = 0.0f;
             
-            // Random position for lightning strike
+            // Random position for lightning strike (scaled to sandbox size)
             std::uniform_real_distribution<float> lightningDist(-0.1f, 0.1f);
-            glm::vec3 strikePos = cloudPosition + glm::vec3(lightningDist(gen) * 0.15f, 0.0f, lightningDist(gen) * 0.1125f);
+            glm::vec3 strikePos = cloudPosition + glm::vec3(
+                lightningDist(gen) * SANDBOX_HALF_WIDTH, 
+                0.0f, 
+                lightningDist(gen) * SANDBOX_HALF_DEPTH);
             
             int lightningCount = 0;
             int maxLightnings = 5 + (rand() % 3); // Generate 5-7 lightning bolts at once

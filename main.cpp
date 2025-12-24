@@ -33,6 +33,7 @@
 #include "interactive_object.h"
 #include "puzzle_game.h"
 #include "spirit_orb.h"
+#include "arrow_trap.h"
 
 #include <iostream>
 #include <vector>
@@ -304,6 +305,17 @@ int main()
         std::cerr << "Failed to load scroll model!" << std::endl;
     }
     
+    // 书柜模型 (against the opposite wall, will move to reveal secret compartment)
+    std::vector<Mesh> bookcaseMeshes;
+    bool bookcaseLoaded = false;
+    if (loadOBJWithMaterials("obj/bookcase_obj/bookcase1.obj", bookcaseMeshes, "obj/bookcase_obj")) {
+        bookcaseLoaded = true;
+        std::cout << "Bookcase model loaded: " << bookcaseMeshes.size() << " meshes" << std::endl;
+        printModelBounds(bookcaseMeshes, "Bookcase");
+    } else {
+        std::cerr << "Failed to load bookcase model!" << std::endl;
+    }
+    
     // 计算台灯的Y坐标范围（用于圆柱投影着色器）
     float lampYMin = 1e9f, lampYMax = -1e9f;
     if (lampLoaded) {
@@ -477,13 +489,14 @@ int main()
     initInteractiveObjects();
     initPuzzleGame();
     initSpiritOrb();
+    initArrowTrap();
     
     // Add interactive objects to the scene
-    // Vase (rotatable) - click to spin, on desk left of sandbox
-    int vaseIdx = addInteractiveObject("Vase", ObjectType::ROTATABLE, VASE_POSITION, 0.08f);
+    // Vase (DECOY) - click to trigger arrow trap mechanism
+    int vaseIdx = addInteractiveObject("Vase", ObjectType::DECOY, VASE_POSITION, 0.08f);
     g_interactiveObjects[vaseIdx].scale = glm::vec3(VASE_SCALE);
     g_interactiveObjects[vaseIdx].baseColor = glm::vec3(0.9f, 0.9f, 0.95f);  // Blue-white porcelain
-    g_interactiveObjects[vaseIdx].highlightColor = glm::vec3(1.0f, 0.9f, 0.5f);
+    g_interactiveObjects[vaseIdx].highlightColor = glm::vec3(1.0f, 0.5f, 0.3f);  // Warning orange when triggered
     
     // Book (movable) - click to slide, on desk right of sandbox
     int bookIdx = addInteractiveObject("Book", ObjectType::MOVABLE, BOOK_POSITION, 0.08f);
@@ -504,6 +517,11 @@ int main()
     generateCompartmentMesh(compartmentMesh);
     setupMesh(compartmentMesh);
     generateOrbMesh(orbMesh);
+    
+    // Generate arrow trap meshes
+    Mesh arrowMesh, compartmentDoorMesh;
+    generateArrowMesh(arrowMesh);
+    generateCompartmentDoorMesh(compartmentDoorMesh);
     setupMesh(orbMesh);
     generateGlowQuadMesh(glowQuadMesh);
     setupMesh(glowQuadMesh);
@@ -535,6 +553,7 @@ int main()
         // 更新解谜游戏系统
         updateInteractiveObjects(deltaTime);
         updatePuzzleGame(deltaTime);
+        updateArrowTrap(deltaTime);
         if (shouldRenderOrb()) {
             updateSpiritOrb(deltaTime, getOrbPosition());
         }
@@ -664,10 +683,14 @@ int main()
             glDrawArrays(GL_TRIANGLES, 0, 6);
 
         // =====================================================================
-        // Render Window (scaled with room)
+        // Render Window (with alpha blending for transparent parts)
         // =====================================================================
+        // Enable blending for transparent texture regions
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        
         lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);
-        lightingShader.setFloat("alpha", 0.7f);
+        lightingShader.setFloat("alpha", 1.0f);  // Use texture's own alpha
         model = glm::translate(glm::mat4(1.0f), cubePos);
         model = glm::scale(model, glm::vec3(ROOM_SCALE_X, ROOM_SCALE_Y, ROOM_SCALE_Z));
         model = glm::translate(model, glm::vec3(0.0f, 0.0f, -0.499f));
@@ -681,17 +704,19 @@ int main()
             }
             glBindVertexArray(WindowVAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        
+        glDisable(GL_BLEND);
         lightingShader.setFloat("alpha", 1.0f);
 
         // =====================================================================
-        // 渲染桌子
+        // 渲染桌子 (against right wall, facing left wall)
         // =====================================================================
         lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);
         lightingShader.setFloat("alpha", 1.0f);
             model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, 0.3f, 0.47f));
-        model = glm::rotate(model, glm::radians(270.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(0.08f));
+        model = glm::translate(model, TABLE_POSITION);
+        model = glm::rotate(model, glm::radians(TABLE_ROTATION), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(TABLE_SCALE));
             lightingShader.setMat4("model", model);
 
         if (tableLoaded && !tableMesh.vertices.empty()) {
@@ -764,13 +789,13 @@ int main()
         // =====================================================================
             lightingShader.use();
             
-        // 地台
+        // 地台 (sandbox platform on desk)
         lightingShader.setVec3("objectColor", 0.5f, 0.4f, 0.3f);
             lightingShader.setBool("hasTexture", false);
             lightingShader.setFloat("alpha", 1.0f);
             lightingShader.setMat4("projection", projection);
             lightingShader.setMat4("view", view);
-        model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.54f, 0.57f));
+        model = glm::translate(glm::mat4(1.0f), glm::vec3(SANDBOX_CENTER_X, 0.54f, SANDBOX_CENTER_Z));
             lightingShader.setMat4("model", model);
             glBindVertexArray(PlatformVAO);
             glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -798,7 +823,7 @@ int main()
             terrainShader.setFloat("orbLightIntensity", getOrbLightIntensity());
             terrainShader.setFloat("orbLightRadius", ORB_LIGHT_RADIUS);
             
-        model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.57f, 0.57f));
+        model = glm::translate(glm::mat4(1.0f), glm::vec3(SANDBOX_CENTER_X, 0.57f, SANDBOX_CENTER_Z));
             terrainShader.setMat4("model", model);
             glBindVertexArray(terrainMesh.VAO);
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(terrainMesh.indices.size()), GL_UNSIGNED_INT, 0);
@@ -1001,10 +1026,129 @@ int main()
             } else {
                 // Fallback to cube
                 lightingShader.setBool("hasTexture", false);
+            glBindVertexArray(lightCubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+            }
+        
+        // =====================================================================
+        // 渲染书柜 (with dynamic position for trap animation)
+        // =====================================================================
+        if (bookcaseLoaded && !bookcaseMeshes.empty()) {
+            lightingShader.use();
+            lightingShader.setVec3("objectColor", 1.0f, 1.0f, 1.0f);
+            lightingShader.setFloat("alpha", 1.0f);
+            
+            // Use dynamic bookcase matrix (animated position)
+            model = getBookcaseMatrix();
+            lightingShader.setMat4("model", model);
+            
+            for (const auto& mesh : bookcaseMeshes) {
+                if (!mesh.textures.empty() && mesh.textures[0].id != 0) {
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, mesh.textures[0].id);
+                    lightingShader.setInt("texture1", 0);
+                    lightingShader.setBool("hasTexture", true);
+                } else {
+                    lightingShader.setBool("hasTexture", false);
+                }
+                glBindVertexArray(mesh.VAO);
+                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, 0);
+            }
+        }
+        
+        // =====================================================================
+        // 渲染墙面暗格 (on wall surface, visible after bookcase moves)
+        // =====================================================================
+        if (isCompartmentVisible()) {
+            lightingShader.use();
+            lightingShader.setBool("hasTexture", false);
+            
+            glm::vec3 compartmentPos = g_wallCompartment.position;
+            glm::vec3 compartmentSize = g_wallCompartment.size;
+            float panelProgress = g_wallCompartment.panelSlideProgress;
+            
+            // Render the dark hole (extends INTO wall from wall surface)
+            lightingShader.setVec3("objectColor", 0.01f, 0.005f, 0.005f);  // Pure black hole
+            model = glm::mat4(1.0f);
+            // Hole extends into wall (+X direction)
+            model = glm::translate(model, compartmentPos + glm::vec3(0.08f, 0.0f, 0.0f));
+            model = glm::scale(model, glm::vec3(
+                0.15f,                      // Depth into wall
+                compartmentSize.y,          // Full height
+                compartmentSize.z           // Full width
+            ));
+            lightingShader.setMat4("model", model);
+            glBindVertexArray(lightCubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            
+            // Render the sliding panels (same color as right wall)
+            // Two panels that start covering the hole and slide up/down from center
+            if (panelProgress < 1.0f) {
+                lightingShader.setVec3("objectColor", 0.7f, 0.4f, 0.3f);  // Same as right wall
+                
+                float halfHeight = compartmentSize.y * 0.5f;
+                float slideOffset = panelProgress * halfHeight;
+                float panelX = -0.02f;  // Slightly in front of wall surface (toward room)
+                float panelThickness = 0.015f;
+                
+                // Upper panel - covers top half, slides UP to disappear
+                float upperVisible = halfHeight - slideOffset;
+                if (upperVisible > 0.002f) {
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, compartmentPos + glm::vec3(panelX, 
+                        slideOffset + upperVisible * 0.5f, 0.0f));
+                    model = glm::scale(model, glm::vec3(panelThickness, upperVisible, compartmentSize.z));
+                    lightingShader.setMat4("model", model);
+                    glBindVertexArray(lightCubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+                
+                // Lower panel - covers bottom half, slides DOWN to disappear
+                float lowerVisible = halfHeight - slideOffset;
+                if (lowerVisible > 0.002f) {
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, compartmentPos + glm::vec3(panelX, 
+                        -slideOffset - lowerVisible * 0.5f, 0.0f));
+                    model = glm::scale(model, glm::vec3(panelThickness, lowerVisible, compartmentSize.z));
+                    lightingShader.setMat4("model", model);
                     glBindVertexArray(lightCubeVAO);
                     glDrawArrays(GL_TRIANGLES, 0, 36);
                 }
             }
+        }
+        
+        // =====================================================================
+        // 渲染箭矢 (arrow particles)
+        // =====================================================================
+        if (!g_arrows.empty()) {
+            lightingShader.use();
+            lightingShader.setBool("hasTexture", false);
+            
+            for (const auto& arrow : g_arrows) {
+                if (!arrow.active) continue;
+                
+                // Arrow color based on source
+                if (arrow.sourceType == 0) {
+                    lightingShader.setVec3("objectColor", 0.6f, 0.4f, 0.2f);  // Brown (from wall)
+    } else {
+                    lightingShader.setVec3("objectColor", 0.3f, 0.3f, 0.35f); // Dark gray (from window)
+                }
+                
+                // Fade out collided arrows
+                if (arrow.hasCollided) {
+                    lightingShader.setFloat("alpha", 0.5f);
+            } else {
+                    lightingShader.setFloat("alpha", 1.0f);
+                }
+                
+                model = getArrowMatrix(arrow);
+                lightingShader.setMat4("model", model);
+                glBindVertexArray(arrowMesh.VAO);
+                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(arrowMesh.indices.size()), GL_UNSIGNED_INT, 0);
+            }
+            lightingShader.setFloat("alpha", 1.0f);
+        }
         
         // Render secret compartment (dark hole box) - visible when tile opens
         if (g_compartment.isVisible || g_secretTile.isOpen || g_secretTile.isAnimating) {
@@ -1147,15 +1291,21 @@ int main()
     for (auto& mesh : scrollMeshes) {
         cleanupMesh(mesh);
     }
+    for (auto& mesh : bookcaseMeshes) {
+        cleanupMesh(mesh);
+    }
 
     cleanupWeatherSystem();
     cleanupInteractiveObjects();
     cleanupPuzzleGame();
     cleanupSpiritOrb();
+    cleanupArrowTrap();
     
     cleanupMesh(floorTileMesh);
     cleanupMesh(compartmentMesh);
     cleanupMesh(orbMesh);
+    cleanupMesh(arrowMesh);
+    cleanupMesh(compartmentDoorMesh);
     cleanupMesh(glowQuadMesh);
 
     glfwTerminate();

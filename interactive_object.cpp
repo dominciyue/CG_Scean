@@ -1,5 +1,6 @@
 #include "interactive_object.h"
 #include "ray_picking.h"
+#include "arrow_trap.h"
 #include <algorithm>
 #include <cmath>
 
@@ -11,7 +12,7 @@ int g_hoveredObjectIndex = -1;
 // Animation parameters
 const float MECHANISM_TRIGGER_ANGLE = 90.0f;
 const float ROTATION_ANIMATION_SPEED = 120.0f;  // degrees per second
-const float MOVE_ANIMATION_DISTANCE = 0.15f;    // units to move
+const float MOVE_ANIMATION_DISTANCE = 0.075f;   // units to move (reduced to half)
 const float MOVE_ANIMATION_SPEED = 0.3f;        // units per second
 
 void initInteractiveObjects() {
@@ -215,6 +216,19 @@ void triggerObjectAnimation(int index) {
             }
             break;
             
+        case ObjectType::DECOY:
+            // Decoy mechanism: triggers arrow trap, only once
+            if (!obj.hasBeenTriggered) {
+                obj.isAnimating = true;
+                obj.isResetting = false;
+                obj.animationProgress = 0.0f;
+                obj.hasBeenTriggered = true;
+                
+                // Trigger the arrow trap system!
+                triggerDecoyMechanism();
+            }
+            break;
+            
         default:
             break;
     }
@@ -319,6 +333,21 @@ void updateInteractiveObjects(float deltaTime) {
                             obj.hasAnimated = true;
                             obj.hasBeenTriggered = true; // Trigger the mechanism!
                         }
+                    }
+                    break;
+                }
+                
+                case ObjectType::DECOY: {
+                    // Decoy rotates when triggered (like a suspicious vase)
+                    float rotationDelta = ROTATION_ANIMATION_SPEED * deltaTime;
+                    obj.rotation.y += rotationDelta;
+                    
+                    obj.animationProgress += deltaTime * 1.5f;
+                    
+                    if (obj.animationProgress >= 1.0f) {
+                        obj.isAnimating = false;
+                        obj.hasAnimated = true;
+                        // Keep it at the rotated position as visual feedback
                     }
                     break;
                 }
