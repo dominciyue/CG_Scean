@@ -511,20 +511,22 @@ int main()
     g_interactiveObjects[scrollIdx].highlightColor = glm::vec3(1.0f, 0.8f, 0.3f);
     
     // Generate puzzle meshes
-    Mesh floorTileMesh, compartmentMesh, orbMesh, glowQuadMesh;
+    Mesh floorTileMesh, compartmentMesh, orbMesh, glowQuadMesh, rayMesh;
     generateFloorTileMesh(floorTileMesh);
     setupMesh(floorTileMesh);
     generateCompartmentMesh(compartmentMesh);
     setupMesh(compartmentMesh);
     generateOrbMesh(orbMesh);
+    setupMesh(orbMesh);
+    generateGlowQuadMesh(glowQuadMesh);
+    setupMesh(glowQuadMesh);
+    generateRayMesh(rayMesh);
+    setupMesh(rayMesh);
     
     // Generate arrow trap meshes
     Mesh arrowMesh, compartmentDoorMesh;
     generateArrowMesh(arrowMesh);
     generateCompartmentDoorMesh(compartmentDoorMesh);
-    setupMesh(orbMesh);
-    generateGlowQuadMesh(glowQuadMesh);
-    setupMesh(glowQuadMesh);
 
     // Cloud sphere positions
     std::vector<glm::vec3> cloudSpheres;
@@ -1208,6 +1210,35 @@ int main()
             glBindVertexArray(orbMesh.VAO);
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(orbMesh.indices.size()), GL_UNSIGNED_INT, 0);
             
+            // Render light rays emanating from orb
+            lightingShader.use();
+            lightingShader.setBool("hasTexture", false);
+            const auto& rays = getOrbRays();
+            for (const auto& ray : rays) {
+                glm::vec3 rayColor = g_spiritOrb.rayColor * ray.intensity;
+                lightingShader.setVec3("objectColor", rayColor);
+                lightingShader.setFloat("alpha", ray.intensity * 0.7f);
+                lightingShader.setMat4("model", getRayModelMatrix(ray));
+                glBindVertexArray(rayMesh.VAO);
+                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(rayMesh.indices.size()), GL_UNSIGNED_INT, 0);
+            }
+            lightingShader.setFloat("alpha", 1.0f);
+            
+            // Render projected light spots on floor and walls
+            const auto& spots = getOrbSpots();
+            for (const auto& spot : spots) {
+                if (spot.intensity > 0.1f) {
+                    glm::vec3 spotColor = g_spiritOrb.spotColor * spot.intensity;
+                    lightingShader.setVec3("objectColor", spotColor);
+                    lightingShader.setFloat("alpha", spot.intensity * 0.6f);
+                    lightingShader.setMat4("model", getSpotModelMatrix(spot));
+                    // Use glow quad mesh as a circular spot
+                    glBindVertexArray(glowQuadMesh.VAO);
+                    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(glowQuadMesh.indices.size()), GL_UNSIGNED_INT, 0);
+                }
+            }
+            lightingShader.setFloat("alpha", 1.0f);
+            
             // Render glow particles
             particleShader.use();
             particleShader.setMat4("projection", projection);
@@ -1307,6 +1338,7 @@ int main()
     cleanupMesh(arrowMesh);
     cleanupMesh(compartmentDoorMesh);
     cleanupMesh(glowQuadMesh);
+    cleanupMesh(rayMesh);
 
     glfwTerminate();
     return 0;
