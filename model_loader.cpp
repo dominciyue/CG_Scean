@@ -302,9 +302,14 @@ bool loadOBJWithMaterials(const std::string& path,
             mesh.indices.push_back(static_cast<unsigned int>(i));
         }
         
-        // Load texture (try directory first, then root)
+        // Load texture and/or material color
         if (materials.find(group.materialName) != materials.end()) {
             Material& mat = materials[group.materialName];
+            
+            // Always save the diffuse color from material
+            mesh.diffuseColor = mat.Kd;
+            mesh.hasDiffuseColor = true;
+            
             if (!mat.map_Kd.empty()) {
                 Texture tex;
                 tex.type = "texture_diffuse";
@@ -313,7 +318,13 @@ bool loadOBJWithMaterials(const std::string& path,
                 tex.path = directory + "/" + mat.map_Kd;
                 tex.id = loadTexture(tex.path.c_str());
                 
-                // If failed, try from root
+                // If failed, try from root obj directory
+                if (tex.id == 0) {
+                    tex.path = "obj/" + mat.map_Kd;
+                    tex.id = loadTexture(tex.path.c_str());
+                }
+                
+                // If still failed, try from current directory
                 if (tex.id == 0) {
                     tex.path = mat.map_Kd;
                     tex.id = loadTexture(tex.path.c_str());
@@ -321,8 +332,18 @@ bool loadOBJWithMaterials(const std::string& path,
                 
                 if (tex.id != 0) {
                     mesh.textures.push_back(tex);
+                    std::cout << "Loaded texture: " << tex.path << " for material: " << group.materialName << std::endl;
+                } else {
+                    std::cerr << "Failed to load texture: " << mat.map_Kd << " for material: " << group.materialName << std::endl;
                 }
+            } else {
+                // No texture, will use diffuse color
+                std::cout << "Material " << group.materialName << " uses color only: (" 
+                          << mat.Kd.x << ", " << mat.Kd.y << ", " << mat.Kd.z << ")" << std::endl;
             }
+        } else {
+            // Material not found in MTL file
+            std::cerr << "Warning: Material '" << group.materialName << "' not found in MTL file" << std::endl;
         }
         
         // Setup OpenGL buffers

@@ -125,6 +125,9 @@ bool checkArrowCollision(Arrow& arrow, float deltaTime);
 bool rayIntersectsAABB(const glm::vec3& rayOrigin, const glm::vec3& rayDir,
                        const glm::vec3& boxMin, const glm::vec3& boxMax, float& t);
 
+// Mesh-based collision detection
+bool checkArrowMeshCollision(Arrow& arrow, float deltaTime);
+
 // Rendering helpers
 glm::mat4 getBookcaseMatrix();
 glm::mat4 getCompartmentMatrix();

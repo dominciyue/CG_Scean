@@ -30,6 +30,10 @@ struct Mesh {
     std::vector<unsigned int> indices;
     std::vector<Texture> textures;
     unsigned int VAO = 0, VBO = 0, EBO = 0;
+    
+    // Material color (used when no texture is available)
+    glm::vec3 diffuseColor = glm::vec3(1.0f);  // Default white
+    bool hasDiffuseColor = false;              // Whether material defines Kd color
 };
 
 // =====================================================================

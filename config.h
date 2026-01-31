@@ -93,6 +93,7 @@ const glm::vec3 SCROLL_POSITION(-0.2f, 0.3f, 0.5f);        // Scroll on floor, i
 
 // Object scales (models are ~1 unit, scale to fit scene ~0.1 units)
 const float VASE_SCALE = 0.08f;      // Height ~1.15 -> 0.09 units
+const float VASE_ROTATION = 0.0f;    // Rotation around Y axis (degrees)
 const float BOOK_SCALE = 0.08f;      // Height ~0.96 -> 0.08 units  
 const float SCROLL_SCALE = 0.12f;    // Length ~1.04 -> 0.12 units
 

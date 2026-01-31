@@ -22,8 +22,8 @@ extern float lampLightRadius;
 
 // Default lamp light settings
 const glm::vec3 DEFAULT_LAMP_LIGHT_COLOR(1.0f, 0.9f, 0.7f);  // Warm white
-const float DEFAULT_LAMP_LIGHT_INTENSITY = 1.5f;
-const float DEFAULT_LAMP_LIGHT_RADIUS = 0.8f;  // Light falloff radius
+const float DEFAULT_LAMP_LIGHT_INTENSITY = 1.5f;             // Light intensity
+const float DEFAULT_LAMP_LIGHT_RADIUS = 0.8f;                // Light radius
 
 // Lamp shade (cylinder) collision parameters for mouse picking
 // Based on lamp1.obj: shade is roughly from Y=0.5 to Y=1.4 in model space

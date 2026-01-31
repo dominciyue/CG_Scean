@@ -1,0 +1,33 @@
+main.cpp	主程序入口，包含渲染循环、场景初始化、对象渲染等
+config.h	全局配置参数（窗口尺寸、房间大小、物体位置等）
+types.h	数据类型定义（顶点、纹理、网格、粒子、闪电等结构体）
+渲染系统	
+shader.h	着色器类，封装着色器程序的编译、链接和使用
+camera.h	相机类，处理视图变换、键盘/鼠标输入
+geometry_data.h	几何数据定义（房间各面的顶点数据）
+mesh.h/.cpp	网格管理（VAO/VBO/EBO的创建和清理）
+texture_loader.h/.cpp	纹理加载功能
+model_loader.h/.cpp	OBJ模型和MTL材质文件加载
+terrain.h/.cpp	地形网格生成（桌上沙盘的山丘地形）
+交互系统	
+input.h/.cpp	输入处理（键盘、鼠标移动、点击回调）
+ray_picking.h/.cpp	射线拾取（鼠标点击选取3D对象）
+interactive_object.h/.cpp	可交互对象管理（花瓶、书籍、卷轴）
+游戏逻辑	
+puzzle_game.h/.cpp	解谜游戏状态机（地砖翻转、暗格打开）
+spirit_orb.h/.cpp	灵珠系统（发光效果、粒子、光线）
+arrow_trap.h/.cpp	箭矢陷阱系统（诱饵触发、书柜移动）
+环境效果	
+lamp_light.h/.cpp	台灯光源系统（开关、光照衰减）
+weather.h/.cpp	天气系统（云层、雨、雪、闪电）
+着色器文件	
+lighting.vs/.fs	主光照着色器（Phong光照模型）
+lightcube.vs/.fs	光源立方体着色器
+terrain.vs/.fs	地形着色器（带颜色渐变）
+cyl.vs/.fs	圆柱投影着色器（台灯灯罩）
+orb.vs/.fs	灵珠发光着色器
+particle.vs/.fs	粒子着色器
+明天我要进行该项目的答辩，但是由于太久没有关注这个项目，我已经接近完全忘记，请帮我梳理项目结构和项目代码，帮我完全理解项目和项目用到的工具方法和具体实现。
+---
+alwaysApply: true
+---

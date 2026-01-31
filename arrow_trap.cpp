@@ -1,6 +1,7 @@
 #include "arrow_trap.h"
 #include "config.h"
 #include "ray_picking.h"
+#include "mesh_collision.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
 #include <random>
@@ -515,6 +516,11 @@ bool checkArrowCollision(Arrow& arrow, float deltaTime) {
         return true;
     }
     
+    // Check mesh-based collision (for lamp, vase, etc.)
+    if (checkArrowMeshCollision(arrow, deltaTime)) {
+        return true;
+    }
+    
     return false;
 }
 
@@ -534,6 +540,30 @@ bool rayIntersectsAABB(const glm::vec3& rayOrigin, const glm::vec3& rayDir,
     
     t = tNear > 0.0f ? tNear : tFar;
     return true;
+}
+
+// =====================================================================
+// Mesh-Based Collision Detection
+// =====================================================================
+bool checkArrowMeshCollision(Arrow& arrow, float deltaTime) {
+    // Use sweep test from previous position to current position
+    glm::vec3 prevPos = arrow.position - arrow.velocity * deltaTime;
+    
+    // Perform sweep test against all registered collision meshes
+    CollisionResult result = sweepTestAllMeshes(prevPos, arrow.position, ARROW_RADIUS);
+    
+    if (result.hit) {
+        // Handle collision
+        handleCollision(arrow, result.point, result.normal);
+        
+        std::cout << "[Arrow] Hit mesh: " << result.meshName 
+                  << " at (" << result.point.x << ", " << result.point.y << ", " << result.point.z << ")" 
+                  << std::endl;
+        
+        return true;
+    }
+    
+    return false;
 }
 
 // =====================================================================

@@ -84,18 +84,19 @@ void main()
     vec3 lampResult = vec3(0.0);
     
     if (lampOn) {
+        // Calculate lamp contribution
         vec3 lampDir = normalize(lampLightPos - FragPos);
         float lampDistance = length(lampLightPos - FragPos);
         float lampAttenuation = calcLampAttenuation(lampDistance / lampLightRadius);
         
-        // Lamp ambient
+        // Lamp ambient (warm glow)
         vec3 lampAmbient = 0.15 * lampLightColor * lampLightIntensity * lampAttenuation;
         
-        // Lamp diffuse
+        // Lamp diffuse (soft, warm)
         float lampDiff = max(dot(norm, lampDir), 0.0);
         vec3 lampDiffuse = lampDiff * lampLightColor * lampLightIntensity * lampAttenuation;
         
-        // Lamp specular
+        // Lamp specular (softer)
         vec3 lampReflectDir = reflect(-lampDir, norm);
         float lampSpec = pow(max(dot(viewDir, lampReflectDir), 0.0), 16);
         vec3 lampSpecular = 0.2 * lampSpec * lampLightColor * lampLightIntensity * lampAttenuation;
